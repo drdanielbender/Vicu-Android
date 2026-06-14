@@ -6,7 +6,6 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.rendyhd.vicu.MainActivity
@@ -16,14 +15,11 @@ import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.notification.NotificationChannelManager
 import com.rendyhd.vicu.util.DateUtils
-import dagger.assisted.Assisted
-import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 
-@HiltWorker
-class DailySummaryWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
-    @Assisted workerParams: WorkerParameters,
+class DailySummaryWorker(
+    appContext: Context,
+    workerParams: WorkerParameters,
     private val taskDao: TaskDao,
     private val taskMapper: TaskMapper,
     private val notificationPrefsStore: NotificationPrefsStore,

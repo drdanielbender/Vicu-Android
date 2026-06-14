@@ -7,18 +7,21 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.rendyhd.vicu.worker.DailySummaryWorker
-import dagger.hilt.android.qualifiers.ApplicationContext
-import java.time.Duration
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
+
+import kotlinx.datetime.Clock
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class DailySummaryScheduler @Inject constructor(
-    @ApplicationContext private val context: Context,
+    private val context: Context,
 ) {
     companion object {
         private const val TAG = "DailySummaryScheduler"
@@ -50,14 +53,26 @@ class DailySummaryScheduler @Inject constructor(
         // Compute the delay in the system zone so the FIRST fire lands on the correct wall-clock
         // time across DST transitions. (The 24h periodic interval re-anchors on each schedule()
         // call — boot, settings change — keeping drift bounded.)
-        val zone = ZoneId.systemDefault()
-        val now = ZonedDateTime.now(zone)
-        var target = now.with(LocalTime.of(hour, minute))
-        if (!target.isAfter(now)) target = target.plusDays(1)
-        val initialDelay = Duration.between(now, target)
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = Clock.System.now()
+        val localNow = now.toLocalDateTime(timeZone)
+
+        var targetLocal = LocalDateTime(
+            localNow.year, localNow.monthNumber, localNow.dayOfMonth,
+            hour, minute, 0, 0
+        )
+        var targetInstant = targetLocal.toInstant(timeZone)
+        if (targetInstant <= now) {
+            val tomorrow = localNow.date.plus(1, DateTimeUnit.DAY)
+            targetInstant = LocalDateTime(
+                tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth,
+                hour, minute, 0, 0
+            ).toInstant(timeZone)
+        }
+        val initialDelayMillis = (targetInstant - now).inWholeMilliseconds
 
         val request = PeriodicWorkRequestBuilder<DailySummaryWorker>(24, TimeUnit.HOURS)
-            .setInitialDelay(initialDelay.toMillis(), TimeUnit.MILLISECONDS)
+            .setInitialDelay(initialDelayMillis, TimeUnit.MILLISECONDS)
             .setInputData(workDataOf("slot" to slot))
             .build()
 
@@ -66,7 +81,7 @@ class DailySummaryScheduler @Inject constructor(
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
-        Log.d(TAG, "Scheduled $slot daily summary at $hour:$minute (delay=${initialDelay.toMinutes()}min)")
+        Log.d(TAG, "Scheduled $slot daily summary at $hour:$minute (delay=${initialDelayMillis / 60000}min)")
     }
 
     fun cancel(slot: String) {

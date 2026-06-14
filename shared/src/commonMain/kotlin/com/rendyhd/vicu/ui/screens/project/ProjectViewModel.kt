@@ -1,0 +1,239 @@
+package com.rendyhd.vicu.ui.screens.project
+
+import android.util.Log
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.rendyhd.vicu.domain.model.Project
+import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.repository.LabelRepository
+import com.rendyhd.vicu.domain.repository.ProjectRepository
+import com.rendyhd.vicu.domain.repository.TaskRepository
+import com.rendyhd.vicu.util.NetworkResult
+import com.rendyhd.vicu.util.dropPositionFor
+import com.rendyhd.vicu.util.moveTaskInList
+import com.rendyhd.vicu.util.sortProjectTasks
+import com.rendyhd.vicu.data.sync.SyncStaleness
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class ProjectSection(
+    val project: Project,
+    val tasks: List<Task>,
+    val isExpanded: Boolean = true,
+)
+
+data class ProjectUiState(
+    val project: Project? = null,
+    val sections: List<ProjectSection> = emptyList(),
+    val unsectionedTasks: List<Task> = emptyList(),
+    val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    val error: String? = null,
+    val completedTaskIds: Set<Long> = emptySet(),
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ProjectViewModel(
+    savedStateHandle: SavedStateHandle,
+    private val taskRepository: TaskRepository,
+    private val projectRepository: ProjectRepository,
+    private val labelRepository: LabelRepository,
+    private val syncStaleness: SyncStaleness,
+) : ViewModel() {
+
+    private val projectId: Long = savedStateHandle["projectId"]!!
+
+    private val _uiState = MutableStateFlow(ProjectUiState())
+    val uiState: StateFlow<ProjectUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            // Combine project info, children (sections), parent tasks, and child tasks
+            combine(
+                projectRepository.getById(projectId),
+                projectRepository.getChildren(projectId),
+                taskRepository.getByProjectId(projectId),
+            ) { project, children, parentTasks ->
+                Triple(project, children, parentTasks)
+            }.flatMapLatest { (project, children, parentTasks) ->
+                if (children.isEmpty()) {
+                    flowOf(
+                        ProjectUiState(
+                            project = project,
+                            sections = emptyList(),
+                            unsectionedTasks = sortProjectTasks(parentTasks.filter { !it.done }),
+                            isLoading = false,
+                        )
+                    )
+                } else {
+                    // Combine task flows for all child projects
+                    val childTaskFlows = children.map { child ->
+                        taskRepository.getByProjectId(child.id).map { tasks ->
+                            ProjectSection(
+                                project = child,
+                                tasks = sortProjectTasks(tasks.filter { !it.done }),
+                            )
+                        }
+                    }
+                    combine(childTaskFlows) { sectionArray ->
+                        ProjectUiState(
+                            project = project,
+                            sections = sectionArray.toList(),
+                            unsectionedTasks = sortProjectTasks(parentTasks.filter { !it.done }),
+                            isLoading = false,
+                        )
+                    }
+                }
+            }.collect { newState ->
+                _uiState.update { current ->
+                    // Preserve expansion state and completedTaskIds
+                    val sections = newState.sections.map { section ->
+                        val existingExpanded = current.sections
+                            .find { it.project.id == section.project.id }
+                            ?.isExpanded ?: true
+                        section.copy(isExpanded = existingExpanded)
+                    }
+                    newState.copy(
+                        sections = sections,
+                        completedTaskIds = current.completedTaskIds,
+                    )
+                }
+            }
+        }
+        if (syncStaleness.isStale()) refresh()
+    }
+
+    /**
+     * Live reorder while dragging: move [fromId] into the slot of [toId] within its group
+     * (unsectioned list or one section). Cross-group and dated-task moves are vetoed by
+     * moveTaskInList. Returns true when a move was applied. Uses an explicit CAS loop so
+     * the return value is tied to the attempt that actually landed (update {} may retry
+     * its lambda, which would leave a side-channel flag stale).
+     */
+    fun onTaskMoved(fromId: Long, toId: Long): Boolean {
+        while (true) {
+            val current = _uiState.value
+            val next = stateWithMove(current, fromId, toId) ?: return false
+            if (_uiState.compareAndSet(current, next)) return true
+        }
+    }
+
+    /** Returns [state] with the move applied, or null when the move is vetoed. */
+    private fun stateWithMove(state: ProjectUiState, fromId: Long, toId: Long): ProjectUiState? {
+        moveTaskInList(state.unsectionedTasks, fromId, toId)?.let { reordered ->
+            return state.copy(unsectionedTasks = reordered)
+        }
+        val idx = state.sections.indexOfFirst { s -> s.tasks.any { it.id == fromId } }
+        if (idx < 0) return null
+        val reordered = moveTaskInList(state.sections[idx].tasks, fromId, toId) ?: return null
+        val sections = state.sections.toMutableList()
+        sections[idx] = sections[idx].copy(tasks = reordered)
+        return state.copy(sections = sections)
+    }
+
+    /** Drag released: persist the dropped task's new position from its current neighbors. */
+    fun onTaskDropped(taskId: Long) {
+        val state = _uiState.value
+        val inUnsectioned = state.unsectionedTasks.any { it.id == taskId }
+        val (tasks, groupProjectId) = if (inUnsectioned) {
+            state.unsectionedTasks to projectId
+        } else {
+            val section = state.sections.firstOrNull { s -> s.tasks.any { it.id == taskId } }
+                ?: return
+            section.tasks to section.project.id
+        }
+        val newPosition = dropPositionFor(tasks, taskId) ?: return
+        viewModelScope.launch {
+            taskRepository.updatePosition(taskId, groupProjectId, newPosition)
+        }
+    }
+
+    fun toggleSection(sectionIndex: Int) {
+        _uiState.update { state ->
+            val sections = state.sections.toMutableList()
+            if (sectionIndex in sections.indices) {
+                sections[sectionIndex] = sections[sectionIndex].copy(
+                    isExpanded = !sections[sectionIndex].isExpanded
+                )
+            }
+            state.copy(sections = sections)
+        }
+    }
+
+    fun refresh(showSpinner: Boolean = false) {
+        viewModelScope.launch {
+            val completedIds = _uiState.value.completedTaskIds
+            _uiState.update { it.copy(isRefreshing = showSpinner, error = null, completedTaskIds = emptySet()) }
+            try {
+                if (completedIds.isNotEmpty()) taskRepository.deleteLocalByIds(completedIds)
+                taskRepository.refreshAll()
+                projectRepository.refreshAll()
+                labelRepository.refreshAll()
+                syncStaleness.markSynced()
+            } catch (e: Exception) {
+                Log.e("ProjectViewModel", "refresh() failed: ${e.message}", e)
+            } finally {
+                _uiState.update { it.copy(isRefreshing = false) }
+            }
+        }
+    }
+
+    fun toggleDone(task: Task) {
+        viewModelScope.launch {
+            if (!task.done) {
+                _uiState.update { it.copy(completedTaskIds = it.completedTaskIds + task.id) }
+            }
+            when (val result = taskRepository.toggleDone(task)) {
+                is NetworkResult.Error -> {
+                    // Hard failure: revert the optimistic strikethrough along with surfacing
+                    // the error, otherwise the row stays visually completed.
+                    _uiState.update {
+                        it.copy(
+                            error = result.message,
+                            completedTaskIds = it.completedTaskIds - task.id,
+                        )
+                    }
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun undoComplete(task: Task) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(completedTaskIds = it.completedTaskIds - task.id) }
+            // The row still renders done=false (Room is never flipped on complete — the
+            // strikethrough is driven by completedTaskIds), and toggleDone flips whatever
+            // it's handed. Pass done=true so it reverts to done=false remotely; passing the
+            // raw task would re-send done=true and the completion would survive a refresh.
+            taskRepository.toggleDone(task.copy(done = true))
+        }
+    }
+
+    /** Swipe-schedule: applies the configured Today/Urgent action via the repository. */
+    fun scheduleTask(task: Task) {
+        viewModelScope.launch {
+            taskRepository.applyScheduleAction(task)
+        }
+    }
+
+    fun rescheduleTask(task: Task, newDueDate: String) {
+        viewModelScope.launch {
+            val updated = task.copy(dueDate = newDueDate)
+            taskRepository.update(updated)
+        }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+}

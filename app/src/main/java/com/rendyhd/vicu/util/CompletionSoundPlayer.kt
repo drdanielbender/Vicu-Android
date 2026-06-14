@@ -7,7 +7,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.net.toUri
 import com.rendyhd.vicu.data.local.BehaviorPrefsStore
-import dagger.hilt.android.qualifiers.ApplicationContext
+
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,7 +23,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class CompletionSoundPlayer @Inject constructor(
-    @ApplicationContext private val context: Context,
+    private val context: Context,
     private val prefs: BehaviorPrefsStore,
 ) {
     companion object {

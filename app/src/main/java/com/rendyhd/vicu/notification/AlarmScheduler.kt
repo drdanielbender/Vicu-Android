@@ -13,15 +13,15 @@ import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.model.TaskReminder
 import com.rendyhd.vicu.util.DateUtils
-import dagger.hilt.android.qualifiers.ApplicationContext
-import java.time.Duration
-import java.time.Instant
+
+import kotlinx.datetime.Instant
+import kotlin.time.Duration.Companion.seconds
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class AlarmScheduler @Inject constructor(
-    @ApplicationContext private val context: Context,
+    private val context: Context,
     private val taskDao: TaskDao,
     private val taskMapper: TaskMapper,
     private val snoozeStore: SnoozeStore,
@@ -175,7 +175,7 @@ class AlarmScheduler @Inject constructor(
         // Absolute reminder: reminder field has a valid ISO timestamp
         if (reminder.reminder.isNotBlank()) {
             val instant = DateUtils.parseIsoDate(reminder.reminder)
-            if (instant != null) return instant.toEpochMilli()
+            if (instant != null) return instant.toEpochMilliseconds()
         }
 
         // Relative reminder: offset from due_date (or start_date/end_date via relativeTo).
@@ -185,8 +185,8 @@ class AlarmScheduler @Inject constructor(
             val baseDate = DateUtils.parseIsoDate(dueDate)
             if (baseDate != null) {
                 // relativePeriod is in seconds, negative = before due date
-                val triggerInstant = baseDate.plus(Duration.ofSeconds(reminder.relativePeriod))
-                return triggerInstant.toEpochMilli()
+                val triggerInstant = baseDate + reminder.relativePeriod.seconds
+                return triggerInstant.toEpochMilliseconds()
             }
         }
 

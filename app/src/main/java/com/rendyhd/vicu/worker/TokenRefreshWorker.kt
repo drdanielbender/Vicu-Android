@@ -2,7 +2,6 @@ package com.rendyhd.vicu.worker
 
 import android.content.Context
 import android.util.Log
-import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.rendyhd.vicu.auth.AuthDebugLog
@@ -10,10 +9,8 @@ import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.auth.AuthState
 import com.rendyhd.vicu.auth.RefreshFailure
 import com.rendyhd.vicu.auth.RefreshResult
-import com.rendyhd.vicu.auth.SecureTokenStorage
-import com.rendyhd.vicu.data.remote.interceptor.BaseUrlHolder
-import dagger.assisted.Assisted
-import dagger.assisted.AssistedInject
+import com.rendyhd.vicu.auth.TokenStorage
+import com.rendyhd.vicu.data.remote.BaseUrlHolder
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -21,12 +18,11 @@ import kotlin.coroutines.cancellation.CancellationException
  * Keeps the refresh token alive even when the app process is dead,
  * preventing "refresh token expired between app opens" logouts.
  */
-@HiltWorker
-class TokenRefreshWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
-    @Assisted workerParams: WorkerParameters,
+class TokenRefreshWorker(
+    appContext: Context,
+    workerParams: WorkerParameters,
     private val authManager: AuthManager,
-    private val tokenStorage: SecureTokenStorage,
+    private val tokenStorage: TokenStorage,
     private val baseUrlHolder: BaseUrlHolder,
 ) : CoroutineWorker(appContext, workerParams) {
 

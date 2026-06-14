@@ -1,0 +1,299 @@
+package com.rendyhd.vicu.ui.screens.setup
+
+import com.rendyhd.vicu.util.Logger
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.rendyhd.vicu.auth.AuthManager
+import com.rendyhd.vicu.auth.OidcHandler
+import com.rendyhd.vicu.auth.OidcResult
+import com.rendyhd.vicu.auth.PasswordLoginHandler
+import com.rendyhd.vicu.auth.PasswordLoginResult
+import com.rendyhd.vicu.data.local.VikunjaDatabase
+import com.rendyhd.vicu.data.remote.api.OidcProviderDto
+import com.rendyhd.vicu.data.remote.api.VikunjaApiService
+import com.rendyhd.vicu.data.remote.BaseUrlHolder
+import com.rendyhd.vicu.domain.model.Project
+import com.rendyhd.vicu.auth.PlatformAuthHooks
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+enum class SetupStep {
+    ServerUrl,
+    AuthMethodPicker,
+    PasswordLogin,
+    ApiTokenEntry,
+    OidcInProgress,
+    ProjectSelection,
+}
+
+data class SetupUiState(
+    val step: SetupStep = SetupStep.ServerUrl,
+    val serverUrl: String = "https://app.vikunja.cloud",
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val localAuthEnabled: Boolean = false,
+    val oidcProviders: List<OidcProviderDto> = emptyList(),
+    val username: String = "",
+    val password: String = "",
+    val totpPasscode: String = "",
+    val showTotpField: Boolean = false,
+    val apiToken: String = "",
+    val selectedProvider: OidcProviderDto? = null,
+    val projects: List<Project> = emptyList(),
+    val selectedProjectId: Long? = null,
+    val setupComplete: Boolean = false,
+)
+
+class SetupViewModel(
+    private val apiService: VikunjaApiService,
+    private val authManager: AuthManager,
+    private val baseUrlHolder: BaseUrlHolder,
+    private val passwordLoginHandler: PasswordLoginHandler,
+    private val oidcHandler: OidcHandler,
+    private val database: VikunjaDatabase,
+    private val platformAuthHooks: PlatformAuthHooks,
+) : ViewModel() {
+
+    companion object {
+        private const val TAG = "SetupViewModel"
+        private const val DEFAULT_SERVER_URL = "https://app.vikunja.cloud"
+    }
+
+    private val _uiState = MutableStateFlow(SetupUiState())
+    val uiState: StateFlow<SetupUiState> = _uiState.asStateFlow()
+
+    fun updateServerUrl(url: String) {
+        _uiState.update { it.copy(serverUrl = url, error = null) }
+    }
+
+    fun updateUsername(username: String) {
+        _uiState.update { it.copy(username = username, error = null) }
+    }
+
+    fun updatePassword(password: String) {
+        _uiState.update { it.copy(password = password, error = null) }
+    }
+
+    fun updateTotpPasscode(passcode: String) {
+        _uiState.update { it.copy(totpPasscode = passcode, error = null) }
+    }
+
+    fun updateApiToken(token: String) {
+        _uiState.update { it.copy(apiToken = token, error = null) }
+    }
+
+    fun selectProject(projectId: Long) {
+        _uiState.update { it.copy(selectedProjectId = projectId) }
+    }
+
+    fun discoverServer() {
+        val url = _uiState.value.serverUrl.trim().ifBlank { DEFAULT_SERVER_URL }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            try {
+                val normalized = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+                baseUrlHolder.baseUrl = normalized
+                val info = apiService.getServerInfo()
+                // Detect Vikunja 2.0+ by parsing version string
+                val isV2 = parseIsV2(info.version)
+                authManager.storeServerIsV2(isV2)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        serverUrl = normalized,
+                        localAuthEnabled = info.auth.local.enabled,
+                        oidcProviders = if (info.auth.openidConnect.enabled) info.auth.openidConnect.providers.orEmpty() else emptyList(),
+                        step = SetupStep.AuthMethodPicker,
+                    )
+                }
+            } catch (e: Exception) {
+                Logger.e(TAG, "Server discovery failed", e)
+                baseUrlHolder.baseUrl = ""
+                _uiState.update {
+                    it.copy(isLoading = false, error = "Could not connect to server: ${e.localizedMessage}")
+                }
+            }
+        }
+    }
+
+    fun selectPasswordLogin() {
+        _uiState.update {
+            it.copy(step = SetupStep.PasswordLogin, error = null, showTotpField = false, totpPasscode = "")
+        }
+    }
+
+    fun selectApiTokenEntry() {
+        _uiState.update { it.copy(step = SetupStep.ApiTokenEntry, error = null) }
+    }
+
+    fun selectOidcProvider(provider: OidcProviderDto) {
+        _uiState.update { it.copy(selectedProvider = provider, error = null) }
+    }
+
+    fun getOidcAuthParams(): OidcHandler.AuthParams? {
+        val provider = _uiState.value.selectedProvider ?: return null
+        val url = _uiState.value.serverUrl
+        return try {
+            _uiState.update { it.copy(step = SetupStep.OidcInProgress) }
+            oidcHandler.prepareAuthParams(provider, url)
+        } catch (e: Exception) {
+            _uiState.update { it.copy(error = "Failed to start OIDC: ${e.localizedMessage}", step = SetupStep.AuthMethodPicker) }
+            null
+        }
+    }
+
+    fun handleOidcCallback(
+        code: String?,
+        state: String?,
+        error: String?,
+    ) {
+        val provider = _uiState.value.selectedProvider ?: return
+        val url = _uiState.value.serverUrl
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            when (val result = oidcHandler.handleCallbackResult(code, state, error, provider, url)) {
+                is OidcResult.Success -> {
+                    clearLocalData()
+                    authManager.onLoginSuccess(result.token, "oidc", url, provider.key, result.refreshToken)
+                    _uiState.update { it.copy(password = "", totpPasscode = "", apiToken = "") }
+                    createBackupApiToken()
+                    fetchProjectsForSelection()
+                }
+                is OidcResult.Error -> {
+                    _uiState.update {
+                        it.copy(isLoading = false, error = result.message, step = SetupStep.AuthMethodPicker)
+                    }
+                }
+            }
+        }
+    }
+
+    fun submitPasswordLogin() {
+        val state = _uiState.value
+        if (state.username.isBlank() || state.password.isBlank()) {
+            _uiState.update { it.copy(error = "Please enter username and password") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            val totp = if (state.showTotpField) state.totpPasscode else null
+            when (val result = passwordLoginHandler.login(state.username, state.password, totp)) {
+                is PasswordLoginResult.Success -> {
+                    clearLocalData()
+                    authManager.onLoginSuccess(result.token, "password", state.serverUrl, refreshToken = result.refreshToken)
+                    _uiState.update { it.copy(password = "", totpPasscode = "", apiToken = "") }
+                    createBackupApiToken()
+                    fetchProjectsForSelection()
+                }
+                is PasswordLoginResult.NeedsTOTP -> {
+                    _uiState.update { it.copy(isLoading = false, showTotpField = true, error = null) }
+                }
+                is PasswordLoginResult.Error -> {
+                    _uiState.update { it.copy(isLoading = false, error = result.message) }
+                }
+            }
+        }
+    }
+
+    fun submitApiToken() {
+        val token = _uiState.value.apiToken.trim()
+        if (token.isBlank()) {
+            _uiState.update { it.copy(error = "Please enter an API token") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            try {
+                clearLocalData()
+                authManager.onApiTokenLogin(token, _uiState.value.serverUrl)
+                _uiState.update { it.copy(password = "", totpPasscode = "", apiToken = "") }
+                // Validate the token by fetching current user
+                apiService.getCurrentUser()
+                fetchProjectsForSelection()
+            } catch (e: Exception) {
+                authManager.logout()
+                _uiState.update { it.copy(isLoading = false, error = "Invalid API token: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    fun goBack() {
+        _uiState.update { state ->
+            when (state.step) {
+                SetupStep.AuthMethodPicker -> state.copy(step = SetupStep.ServerUrl, error = null)
+                SetupStep.PasswordLogin -> state.copy(step = SetupStep.AuthMethodPicker, error = null, showTotpField = false)
+                SetupStep.ApiTokenEntry -> state.copy(step = SetupStep.AuthMethodPicker, error = null)
+                SetupStep.OidcInProgress -> state.copy(step = SetupStep.AuthMethodPicker, error = null)
+                SetupStep.ProjectSelection -> state.copy(step = SetupStep.AuthMethodPicker, error = null)
+                else -> state
+            }
+        }
+    }
+
+    fun confirmSetup() {
+        val projectId = _uiState.value.selectedProjectId ?: return
+        viewModelScope.launch {
+            authManager.onInboxProjectSelected(projectId)
+            _uiState.update { it.copy(setupComplete = true) }
+            platformAuthHooks.updateWidgets()
+            platformAuthHooks.scheduleRefresh()
+        }
+    }
+
+    private suspend fun clearLocalData() {
+        withContext(Dispatchers.IO) { database.clearAllTables() }
+    }
+
+    private suspend fun fetchProjectsForSelection() {
+        try {
+            val dtos = apiService.getAllProjects()
+            val projects = dtos.map { dto ->
+                Project(
+                    id = dto.id,
+                    title = dto.title,
+                    parentProjectId = dto.parentProjectId,
+                )
+            }
+            // Show only top-level projects for inbox selection
+            val topLevel = projects.filter { it.parentProjectId == 0L }
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    step = SetupStep.ProjectSelection,
+                    projects = topLevel,
+                    selectedProjectId = (topLevel.firstOrNull { it.title.equals("Inbox", ignoreCase = true) } ?: topLevel.firstOrNull())?.id,
+                )
+            }
+        } catch (e: Exception) {
+            _uiState.update { it.copy(isLoading = false, error = "Failed to fetch projects: ${e.localizedMessage}") }
+        }
+    }
+
+    private fun parseIsV2(version: String): Boolean {
+        // Version string may be like "v2.0.0", "2.1.0", "0.24.0", etc.
+        val cleaned = version.trimStart('v', 'V')
+        val major = cleaned.split(".").firstOrNull()?.toIntOrNull() ?: 0
+        return major >= 2
+    }
+
+    private suspend fun createBackupApiToken() {
+        // Delegate to AuthManager so the /routes-expansion logic lives in one place.
+        // AuthManager logs both success and failure to AuthDebugLog; if creation fails here,
+        // AuthManager.ensureBackupApiToken() will retry on the next app launch.
+        val ok = authManager.createBackupApiToken()
+        if (ok) {
+            Logger.i(TAG, "Backup API token created successfully during setup")
+        } else {
+            Logger.w(TAG, "Backup API token creation failed during setup — AuthManager will retry on next launch")
+        }
+    }
+}

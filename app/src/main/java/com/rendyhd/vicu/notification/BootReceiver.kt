@@ -7,23 +7,22 @@ import android.util.Log
 import com.rendyhd.vicu.data.local.NotificationPrefsStore
 import com.rendyhd.vicu.widget.WidgetUpdateScheduler
 import com.rendyhd.vicu.worker.SyncScheduler
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
-@AndroidEntryPoint
-class BootReceiver : BroadcastReceiver() {
+class BootReceiver : BroadcastReceiver(), KoinComponent {
 
     companion object {
         private const val TAG = "BootReceiver"
     }
 
-    @Inject lateinit var alarmScheduler: AlarmScheduler
-    @Inject lateinit var dailySummaryScheduler: DailySummaryScheduler
-    @Inject lateinit var prefsStore: NotificationPrefsStore
+    private val alarmScheduler: AlarmScheduler by inject()
+    private val dailySummaryScheduler: DailySummaryScheduler by inject()
+    private val prefsStore: NotificationPrefsStore by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return

@@ -4,10 +4,9 @@ import android.content.Context
 import android.util.Log
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.rendyhd.vicu.auth.SecureTokenStorage
+import com.rendyhd.vicu.auth.TokenStorage
 import com.rendyhd.vicu.data.local.BehaviorPrefsStore
 import com.rendyhd.vicu.data.local.CustomListStore
 import com.rendyhd.vicu.data.local.WidgetPrefsStore
@@ -17,18 +16,15 @@ import com.rendyhd.vicu.data.local.entity.TaskEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.util.CustomListFilterBuilder
 import com.rendyhd.vicu.util.DateUtils
-import dagger.assisted.Assisted
-import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 
-@HiltWorker
-class TaskWidgetWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
-    @Assisted workerParams: WorkerParameters,
+class TaskWidgetWorker(
+    appContext: Context,
+    workerParams: WorkerParameters,
     private val taskDao: TaskDao,
     private val projectDao: ProjectDao,
     private val taskMapper: TaskMapper,
-    private val secureTokenStorage: SecureTokenStorage,
+    private val secureTokenStorage: TokenStorage,
     private val customListStore: CustomListStore,
     private val widgetPrefsStore: WidgetPrefsStore,
     private val behaviorPrefsStore: BehaviorPrefsStore,

@@ -17,22 +17,20 @@ import com.rendyhd.vicu.auth.AuthDebugLog
 import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.data.local.ThemeMode
 import com.rendyhd.vicu.data.local.ThemePrefsStore
-import com.rendyhd.vicu.data.remote.interceptor.BaseUrlHolder
+import com.rendyhd.vicu.data.remote.BaseUrlHolder
 import com.rendyhd.vicu.domain.model.SharedContent
 import com.rendyhd.vicu.ui.VicuApp
 import com.rendyhd.vicu.worker.TokenRefreshScheduler
 import com.rendyhd.vicu.ui.theme.VicuTheme
-import dagger.hilt.android.AndroidEntryPoint
+import org.koin.android.ext.android.inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var authManager: AuthManager
-    @Inject lateinit var baseUrlHolder: BaseUrlHolder
-    @Inject lateinit var themePrefsStore: ThemePrefsStore
+    private val authManager: AuthManager by inject()
+    private val baseUrlHolder: BaseUrlHolder by inject()
+    private val themePrefsStore: ThemePrefsStore by inject()
 
     private val _initialTaskId = MutableStateFlow<Long?>(null)
     private val _showTaskEntry = MutableStateFlow(false)
@@ -158,7 +156,7 @@ class MainActivity : ComponentActivity() {
         _sharedContent.value = SharedContent(
             text = text,
             subject = subject,
-            fileUris = listOfNotNull(streamUri),
+            fileUris = listOfNotNull(streamUri).map { it.toString() },
             mimeType = intent.type,
         )
     }
@@ -178,7 +176,7 @@ class MainActivity : ComponentActivity() {
         _sharedContent.value = SharedContent(
             text = intent.getStringExtra(Intent.EXTRA_TEXT),
             subject = intent.getStringExtra(Intent.EXTRA_SUBJECT),
-            fileUris = uris,
+            fileUris = uris.map { it.toString() },
             mimeType = intent.type,
         )
     }

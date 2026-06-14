@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.hilt)
     alias(libs.plugins.room)
 }
 
@@ -29,8 +28,6 @@ android {
         versionName = "1.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.rendyhd.vicu"
     }
 
     if (keystorePropsFile.exists()) {
@@ -61,10 +58,6 @@ android {
             // release/beta build instead of hitting INSTALL_FAILED_UPDATE_INCOMPATIBLE.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            // Distinct redirect scheme so two apps don't register the same custom URI.
-            // Note: OIDC won't work on debug (this scheme isn't registered with the IdP);
-            // use password or API-token login on the debug variant.
-            manifestPlaceholders["appAuthRedirectScheme"] = "com.rendyhd.vicu.debug"
         }
     }
     compileOptions {
@@ -82,6 +75,7 @@ room {
 }
 
 dependencies {
+    implementation(project(":shared"))
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)
@@ -98,18 +92,17 @@ dependencies {
     // Navigation
     implementation(libs.androidx.navigation.compose)
 
-    // Hilt
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.hilt.navigation.compose)
+    // Koin
+    implementation(libs.koin.android)
+    implementation(libs.koin.androidx.workmanager)
+    implementation(libs.koin.compose)
+    implementation(libs.koin.compose.viewmodel)
 
     // Room
     implementation(libs.room.runtime)
     ksp(libs.room.compiler)
 
     // Networking
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.kotlinx)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
@@ -119,8 +112,6 @@ dependencies {
 
     // WorkManager
     implementation(libs.workmanager)
-    implementation(libs.hilt.work)
-    ksp(libs.hilt.work.compiler)
 
     // Glance (Widgets)
     implementation(libs.glance.appwidget)
@@ -131,8 +122,8 @@ dependencies {
     implementation(libs.coil.network.okhttp)
 
     // Auth
-    implementation(libs.appauth)
     implementation(libs.tink.android)
+    implementation(libs.kotlinx.datetime)
 
     // Reorderable (drag-and-drop)
     implementation(libs.reorderable)

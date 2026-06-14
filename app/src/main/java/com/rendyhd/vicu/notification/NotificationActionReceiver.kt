@@ -11,20 +11,19 @@ import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
-import com.rendyhd.vicu.data.remote.interceptor.BaseUrlHolder
+import com.rendyhd.vicu.data.remote.BaseUrlHolder
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.widget.WidgetUpdateScheduler
 import com.rendyhd.vicu.worker.SyncScheduler
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
-@AndroidEntryPoint
-class NotificationActionReceiver : BroadcastReceiver() {
+class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
 
     companion object {
         private const val TAG = "NotifActionReceiver"
@@ -32,14 +31,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val ACTION_SNOOZE = "com.rendyhd.vicu.ACTION_SNOOZE"
     }
 
-    @Inject lateinit var taskDao: TaskDao
-    @Inject lateinit var taskMapper: TaskMapper
-    @Inject lateinit var api: VikunjaApiService
-    @Inject lateinit var alarmScheduler: AlarmScheduler
-    @Inject lateinit var pendingActionDao: PendingActionDao
-    @Inject lateinit var json: Json
-    @Inject lateinit var baseUrlHolder: BaseUrlHolder
-    @Inject lateinit var authManager: AuthManager
+    private val taskDao: TaskDao by inject()
+    private val taskMapper: TaskMapper by inject()
+    private val api: VikunjaApiService by inject()
+    private val alarmScheduler: AlarmScheduler by inject()
+    private val pendingActionDao: PendingActionDao by inject()
+    private val json: Json by inject()
+    private val baseUrlHolder: BaseUrlHolder by inject()
+    private val authManager: AuthManager by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getLongExtra(AlarmReceiver.EXTRA_TASK_ID, 0L)

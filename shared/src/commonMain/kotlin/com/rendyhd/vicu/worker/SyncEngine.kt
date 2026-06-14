@@ -1,0 +1,271 @@
+package com.rendyhd.vicu.worker
+
+import com.rendyhd.vicu.auth.AuthManager
+import com.rendyhd.vicu.data.local.dao.LabelDao
+import com.rendyhd.vicu.data.local.dao.PendingActionDao
+import com.rendyhd.vicu.data.local.dao.TaskDao
+import com.rendyhd.vicu.data.local.entity.PendingActionEntity
+import com.rendyhd.vicu.data.mapper.LabelMapper
+import com.rendyhd.vicu.data.mapper.TaskMapper
+import com.rendyhd.vicu.data.remote.api.LabelTaskDto
+import com.rendyhd.vicu.data.remote.api.TaskDto
+import com.rendyhd.vicu.data.remote.api.VikunjaApiService
+import com.rendyhd.vicu.data.remote.BaseUrlHolder
+import com.rendyhd.vicu.domain.model.Label
+import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
+import com.rendyhd.vicu.util.Constants
+import com.rendyhd.vicu.util.DateUtils
+import com.rendyhd.vicu.util.isRetriableNetworkError
+import com.rendyhd.vicu.util.Logger
+import kotlinx.serialization.json.Json
+import kotlin.time.Duration.Companion.seconds
+
+fun remapLabelTaskPayload(payload: String, tempId: Long, realId: Long): String? {
+    val parts = payload.split(":")
+    if (parts.size != 2) return null
+    if (parts[0].toLongOrNull() != tempId) return null
+    return "$realId:${parts[1]}"
+}
+
+class SyncEngine(
+    private val pendingActionDao: PendingActionDao,
+    private val taskDao: TaskDao,
+    private val labelDao: LabelDao,
+    private val api: VikunjaApiService,
+    private val taskMapper: TaskMapper,
+    private val labelMapper: LabelMapper,
+    private val platformHooks: PlatformRepositoryHooks,
+    private val json: Json,
+    private val baseUrlHolder: BaseUrlHolder,
+    private val authManager: AuthManager,
+) {
+    companion object {
+        private const val TAG = "SyncEngine"
+        private const val MAX_RETRIES = 5
+        private const val DUPLICATE_WINDOW_SECS = 900L
+        private val TASK_DEPENDENT_ACTIONS = setOf("update", "toggle_done", "delete")
+        private val LABEL_TASK_ACTIONS = setOf("add_label", "remove_label")
+    }
+
+    suspend fun performSync(): Boolean {
+        Logger.d(TAG, "SyncEngine started")
+
+        baseUrlHolder.ensureInitialized()
+        authManager.ensureInitializedAndGetToken()
+
+        pendingActionDao.resetProcessingToPending()
+
+        var hasRetriableFailures = false
+
+        try {
+            val actions = pendingActionDao.getRetryable()
+                .sortedBy { if (it.entityType == "task" && it.actionType == "create") 0 else 1 }
+            Logger.d(TAG, "Processing ${actions.size} pending actions")
+            val tempIdMap = mutableMapOf<Long, Long>()
+
+            for (action in actions) {
+                pendingActionDao.updateStatus(action.id, "processing")
+                try {
+                    processAction(action, tempIdMap)
+                    pendingActionDao.updateStatus(action.id, "completed")
+                    Logger.d(TAG, "Action ${action.id} (${action.entityType}/${action.actionType}) completed")
+                } catch (e: Exception) {
+                    Logger.e(TAG, "Action ${action.id} failed: ${e.message}", e)
+                    if (isRetriableNetworkError(e) && action.retryCount < MAX_RETRIES) {
+                        pendingActionDao.updateStatus(action.id, "pending", action.retryCount + 1)
+                        hasRetriableFailures = true
+                    } else {
+                        pendingActionDao.updateStatus(action.id, "failed")
+                    }
+                }
+            }
+
+            pendingActionDao.deleteCompleted()
+
+            refreshAllFromServer()
+        } catch (e: Exception) {
+            Logger.e(TAG, "SyncEngine failed: ${e.message}", e)
+            throw e
+        } finally {
+            platformHooks.updateWidgets()
+        }
+
+        return !hasRetriableFailures
+    }
+
+    private suspend fun processAction(action: PendingActionEntity, tempIdMap: MutableMap<Long, Long>) {
+        when (action.entityType) {
+            "task" -> processTaskAction(action, tempIdMap)
+            "label" -> processLabelAction(action, tempIdMap)
+            else -> Logger.w(TAG, "Unknown entity type: ${action.entityType}")
+        }
+    }
+
+    private suspend fun findRecentDuplicate(task: Task): TaskDto? = try {
+        val queuedAt = DateUtils.parseIsoDate(task.created)
+        if (queuedAt == null) {
+            null
+        } else {
+            api.getAllTasks(mapOf("s" to task.title, "filter" to "project_id = ${task.projectId}"))
+                .firstOrNull { dto ->
+                    val dt = DateUtils.parseIsoDate(dto.created)
+                    dto.title == task.title &&
+                        dto.projectId == task.projectId &&
+                        dt != null && dt > queuedAt - DUPLICATE_WINDOW_SECS.seconds
+                }
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    private suspend fun processTaskAction(action: PendingActionEntity, tempIdMap: MutableMap<Long, Long>) {
+        when (action.actionType) {
+            "create" -> {
+                val task = json.decodeFromString<Task>(action.payload)
+                val responseDto = findRecentDuplicate(task)
+                    ?: api.createTask(task.projectId, with(taskMapper) { task.toCreateDto() })
+                val responseEntity = with(taskMapper) { responseDto.toEntity() }
+                taskDao.deleteById(action.entityId)
+                taskDao.upsert(responseEntity)
+
+                var finalEntity = responseEntity
+                if (task.done) {
+                    val toggled = with(taskMapper) { responseEntity.toDomain() }.copy(
+                        done = true,
+                        doneAt = task.doneAt.ifBlank { DateUtils.nowIso() },
+                    )
+                    val doneDto = api.updateTask(responseEntity.id, with(taskMapper) { toggled.toDto() })
+                    finalEntity = with(taskMapper) { doneDto.toEntity() }
+                    taskDao.upsert(finalEntity)
+                }
+                val created = with(taskMapper) { finalEntity.toDomain() }
+                if (created.done) {
+                    platformHooks.cancelAlarm(created.id)
+                } else {
+                    platformHooks.scheduleAlarm(created)
+                }
+                if (action.entityId != responseEntity.id) {
+                    tempIdMap[action.entityId] = responseEntity.id
+                    remapPendingDependents(action.entityId, responseEntity.id)
+                }
+            }
+            "update", "toggle_done" -> {
+                val decoded = json.decodeFromString<Task>(action.payload)
+                val task = tempIdMap[decoded.id]?.let { decoded.copy(id = it) } ?: decoded
+                val dto = with(taskMapper) { task.toDto() }
+                val responseDto = api.updateTask(task.id, dto)
+                val responseEntity = with(taskMapper) { responseDto.toEntity() }
+                taskDao.upsert(responseEntity)
+                val updated = with(taskMapper) { responseEntity.toDomain() }
+                if (updated.done) {
+                    platformHooks.cancelAlarm(updated.id)
+                } else {
+                    platformHooks.scheduleAlarm(updated)
+                }
+            }
+            "delete" -> {
+                api.deleteTask(tempIdMap[action.entityId] ?: action.entityId)
+            }
+        }
+    }
+
+    private suspend fun processLabelAction(action: PendingActionEntity, tempIdMap: MutableMap<Long, Long>) {
+        when (action.actionType) {
+            "create" -> {
+                val label = json.decodeFromString<Label>(action.payload)
+                val dto = with(labelMapper) { label.toDto() }
+                val responseDto = api.createLabel(dto)
+                val entity = with(labelMapper) { responseDto.toEntity() }
+                labelDao.deleteById(action.entityId)
+                labelDao.upsert(entity)
+            }
+            "update" -> {
+                val label = json.decodeFromString<Label>(action.payload)
+                val dto = with(labelMapper) { label.toDto() }
+                val responseDto = api.updateLabel(label.id, dto)
+                val entity = with(labelMapper) { responseDto.toEntity() }
+                labelDao.upsert(entity)
+            }
+            "delete" -> {
+                api.deleteLabel(action.entityId)
+            }
+            "add_label" -> {
+                val parts = action.payload.split(":")
+                val taskId = parts[0].toLong().let { tempIdMap[it] ?: it }
+                val labelId = parts[1].toLong()
+                api.addLabelToTask(taskId, LabelTaskDto(labelId = labelId))
+            }
+            "remove_label" -> {
+                val parts = action.payload.split(":")
+                val taskId = parts[0].toLong().let { tempIdMap[it] ?: it }
+                val labelId = parts[1].toLong()
+                api.removeLabelFromTask(taskId, labelId)
+            }
+        }
+    }
+
+    private suspend fun remapPendingDependents(tempId: Long, realId: Long) {
+        for (a in pendingActionDao.getRemappable()) {
+            when {
+                a.entityType == "task" && a.entityId == tempId &&
+                    a.actionType in TASK_DEPENDENT_ACTIONS -> {
+                    val newPayload = runCatching {
+                        val t = json.decodeFromString<Task>(a.payload)
+                        json.encodeToString(Task.serializer(), t.copy(id = realId))
+                    }.getOrDefault(a.payload)
+                    pendingActionDao.remapEntity(a.id, realId, newPayload, "pending")
+                }
+                a.entityType == "label" && a.actionType in LABEL_TASK_ACTIONS -> {
+                    remapLabelTaskPayload(a.payload, tempId, realId)?.let { newPayload ->
+                        pendingActionDao.remapEntity(a.id, a.entityId, newPayload, "pending")
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun refreshAllFromServer() {
+        try {
+            val allTasks = mutableListOf<com.rendyhd.vicu.data.remote.api.TaskDto>()
+            var page = 1
+            val maxPages = 100
+            while (page <= maxPages) {
+                val params = mapOf(
+                    "page" to page.toString(),
+                    "per_page" to Constants.DEFAULT_PAGE_SIZE.toString(),
+                )
+                val batch = api.getAllTasks(params)
+                allTasks.addAll(batch)
+                if (batch.size < Constants.DEFAULT_PAGE_SIZE) break
+                page++
+            }
+            val taskEntities = allTasks.map { with(taskMapper) { it.toEntity() } }
+            val pendingTaskIds = pendingActionDao.getTaskIdsWithPendingActions().toSet()
+            val existingById = taskDao.getAllSync().associateBy { it.id }
+            val safeEntities = taskEntities.filter { it.id !in pendingTaskIds }
+            val changed = safeEntities.filter { existingById[it.id] != it }
+            taskDao.upsertAll(changed)
+            var alarmsTouched = changed.any { e ->
+                val old = existingById[e.id]
+                old == null || old.remindersJson != e.remindersJson ||
+                    old.dueDate != e.dueDate || old.done != e.done
+            }
+            val serverTaskIds = allTasks.map { it.id }.toSet() + pendingTaskIds
+            val deletedIds = existingById.keys - serverTaskIds
+            if (deletedIds.isNotEmpty()) {
+                taskDao.deleteNotIn(serverTaskIds)
+                alarmsTouched = true
+            }
+            if (alarmsTouched) platformHooks.rescheduleAlarms()
+            Logger.d(TAG, "Refreshed ${changed.size} changed tasks from server (skipped ${taskEntities.size - safeEntities.size} with pending actions)")
+
+            val labelDtos = api.getAllLabels()
+            val labelEntities = labelDtos.map { with(labelMapper) { it.toEntity() } }
+            labelDao.upsertAll(labelEntities)
+            Logger.d(TAG, "Refreshed ${labelEntities.size} labels from server")
+        } catch (e: Exception) {
+            Logger.e(TAG, "Server refresh failed: ${e.message}", e)
+        }
+    }
+}

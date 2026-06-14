@@ -46,16 +46,14 @@ import com.rendyhd.vicu.data.local.dao.ProjectDao
 import com.rendyhd.vicu.data.local.entity.ProjectEntity
 import com.rendyhd.vicu.domain.model.CustomList
 import com.rendyhd.vicu.ui.theme.VicuTheme
-import dagger.hilt.android.AndroidEntryPoint
+import org.koin.android.ext.android.inject
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class WidgetConfigActivity : ComponentActivity() {
 
-    @Inject lateinit var projectDao: ProjectDao
-    @Inject lateinit var customListStore: CustomListStore
+    private val projectDao: ProjectDao by inject()
+    private val customListStore: CustomListStore by inject()
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
 

@@ -14,27 +14,15 @@ import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.notification.AlarmScheduler
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.worker.SyncScheduler
-import dagger.hilt.EntryPoint
-import dagger.hilt.InstallIn
-import dagger.hilt.android.EntryPointAccessors
-import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 
-class ToggleTaskCallback : ActionCallback {
+class ToggleTaskCallback : ActionCallback, KoinComponent {
 
     companion object {
         private const val TAG = "ToggleTaskCallback"
         val TaskIdKey = ActionParameters.Key<Long>("task_id")
-    }
-
-    @EntryPoint
-    @InstallIn(SingletonComponent::class)
-    interface ToggleEntryPoint {
-        fun taskDao(): TaskDao
-        fun taskMapper(): TaskMapper
-        fun alarmScheduler(): AlarmScheduler
-        fun pendingActionDao(): PendingActionDao
-        fun json(): Json
     }
 
     override suspend fun onAction(
@@ -45,15 +33,11 @@ class ToggleTaskCallback : ActionCallback {
         val taskId = parameters[TaskIdKey] ?: return
         Log.d(TAG, "Toggling task $taskId from widget")
 
-        val entryPoint = EntryPointAccessors.fromApplication(
-            context.applicationContext,
-            ToggleEntryPoint::class.java,
-        )
-        val taskDao = entryPoint.taskDao()
-        val taskMapper = entryPoint.taskMapper()
-        val alarmScheduler = entryPoint.alarmScheduler()
-        val pendingActionDao = entryPoint.pendingActionDao()
-        val json = entryPoint.json()
+        val taskDao = get<TaskDao>()
+        val taskMapper = get<TaskMapper>()
+        val alarmScheduler = get<AlarmScheduler>()
+        val pendingActionDao = get<PendingActionDao>()
+        val json = get<Json>()
 
         try {
             val entity = taskDao.getByIdSync(taskId) ?: return

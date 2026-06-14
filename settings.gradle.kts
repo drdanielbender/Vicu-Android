@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Vicu"
 include(":app")
+include(":shared")

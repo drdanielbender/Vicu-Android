@@ -9,15 +9,14 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.rendyhd.vicu.MainActivity
 import com.rendyhd.vicu.R
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
 import com.rendyhd.vicu.data.local.NotificationPrefsStore
 import com.rendyhd.vicu.data.local.SnoozeStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
-@AndroidEntryPoint
-class AlarmReceiver : BroadcastReceiver() {
+class AlarmReceiver : BroadcastReceiver(), KoinComponent {
 
     companion object {
         private const val TAG = "AlarmReceiver"
@@ -26,8 +25,8 @@ class AlarmReceiver : BroadcastReceiver() {
         const val EXTRA_IS_SNOOZE = "is_snooze"
     }
 
-    @Inject lateinit var prefsStore: NotificationPrefsStore
-    @Inject lateinit var snoozeStore: SnoozeStore
+    private val prefsStore: NotificationPrefsStore by inject()
+    private val snoozeStore: SnoozeStore by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getLongExtra(EXTRA_TASK_ID, 0L)

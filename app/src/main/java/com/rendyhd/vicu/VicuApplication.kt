@@ -7,25 +7,34 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import com.rendyhd.vicu.notification.NotificationChannelManager
 import com.rendyhd.vicu.widget.WidgetUpdateScheduler
-import dagger.hilt.android.HiltAndroidApp
-import javax.inject.Inject
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.context.startKoin
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+import org.koin.androidx.workmanager.koin.workManagerFactory
+import org.koin.androidx.workmanager.factory.KoinDelegatingWorkerFactory
+import com.rendyhd.vicu.di.androidAppModules
+import com.rendyhd.vicu.di.sharedModules
 
-@HiltAndroidApp
-class VicuApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
+class VicuApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory, KoinComponent {
 
-    @Inject lateinit var workerFactory: androidx.hilt.work.HiltWorkerFactory
-    @Inject lateinit var notificationChannelManager: NotificationChannelManager
-    @Inject lateinit var imageLoader: ImageLoader
+    private val notificationChannelManager: NotificationChannelManager by inject()
+    private val imageLoader: ImageLoader by inject()
 
     override fun onCreate() {
         super.onCreate()
+        startKoin {
+            androidContext(this@VicuApplication)
+            workManagerFactory()
+            modules(sharedModules + androidAppModules)
+        }
         notificationChannelManager.createChannels()
         WidgetUpdateScheduler.schedulePeriodicRefresh(this)
     }
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
+            .setWorkerFactory(KoinDelegatingWorkerFactory())
             .build()
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = imageLoader
