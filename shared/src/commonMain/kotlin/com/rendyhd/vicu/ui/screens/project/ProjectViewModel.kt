@@ -25,12 +25,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class ProjectSection(
-    val project: Project,
-    val tasks: List<Task>,
-    val isExpanded: Boolean = true,
-)
-
 data class ProjectUiState(
     val project: Project? = null,
     val sections: List<ProjectSection> = emptyList(),

@@ -1,0 +1,125 @@
+package com.rendyhd.vicu.ui.screens.project
+
+import com.rendyhd.vicu.domain.model.Project
+import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.util.moveTaskInList
+
+/**
+ * One project section: a descendant project rendered as a collapsible group, its undone
+ * tasks, and its own nested sub-sections. [isExpanded] is UI state preserved across emissions.
+ */
+data class ProjectSection(
+    val project: Project,
+    val tasks: List<Task>,
+    val children: List<ProjectSection> = emptyList(),
+    val isExpanded: Boolean = true,
+)
+
+/**
+ * Every descendant project of [rootId] at any depth, depth-first, siblings ordered by
+ * position. A `visited` guard terminates on pre-existing cyclic parent data (A->B->A).
+ */
+fun collectDescendants(rootId: Long, projects: List<Project>): List<Project> {
+    val childMap = projects.groupBy { it.parentProjectId }
+    val result = mutableListOf<Project>()
+    val visited = mutableSetOf<Long>()
+    fun recurse(parentId: Long) {
+        childMap[parentId]?.sortedBy { it.position }?.forEach { child ->
+            if (!visited.add(child.id)) return@forEach
+            result.add(child)
+            recurse(child.id)
+        }
+    }
+    recurse(rootId)
+    return result
+}
+
+/**
+ * Nested section tree for the direct children of [rootId] (recursively). Children are ordered
+ * by position; each node's tasks come from [tasksByProject] (already filtered to undone and
+ * sorted by the caller), defaulting to empty.
+ */
+fun buildSectionTree(
+    rootId: Long,
+    projects: List<Project>,
+    tasksByProject: Map<Long, List<Task>>,
+): List<ProjectSection> {
+    val childMap = projects.groupBy { it.parentProjectId }
+    val visited = mutableSetOf<Long>()
+    fun build(parentId: Long): List<ProjectSection> =
+        childMap[parentId].orEmpty()
+            .sortedBy { it.position }
+            .mapNotNull { project ->
+                if (!visited.add(project.id)) return@mapNotNull null
+                ProjectSection(
+                    project = project,
+                    tasks = tasksByProject[project.id].orEmpty(),
+                    children = build(project.id),
+                )
+            }
+    return build(rootId)
+}
+
+/** Recursively carry [old]'s isExpanded onto [new], matched by project id (default true for new nodes). */
+fun preserveExpansion(new: List<ProjectSection>, old: List<ProjectSection>): List<ProjectSection> {
+    val expandedById = HashMap<Long, Boolean>()
+    fun index(list: List<ProjectSection>) {
+        list.forEach { expandedById[it.project.id] = it.isExpanded; index(it.children) }
+    }
+    index(old)
+    fun apply(list: List<ProjectSection>): List<ProjectSection> = list.map { s ->
+        s.copy(
+            isExpanded = expandedById[s.project.id] ?: true,
+            children = apply(s.children),
+        )
+    }
+    return apply(new)
+}
+
+/** Recursively flip isExpanded on the node whose project id is [projectId]. */
+fun toggleSectionExpanded(sections: List<ProjectSection>, projectId: Long): List<ProjectSection> =
+    sections.map { s ->
+        if (s.project.id == projectId) {
+            s.copy(isExpanded = !s.isExpanded)
+        } else {
+            s.copy(children = toggleSectionExpanded(s.children, projectId))
+        }
+    }
+
+/**
+ * Reorder within whichever section's task list holds both [fromId] and [toId]: returns the
+ * rebuilt tree, or null when no section can absorb the move (task absent, cross-section, or a
+ * dated row — all vetoed by [moveTaskInList]).
+ */
+fun moveTaskInSections(
+    sections: List<ProjectSection>,
+    fromId: Long,
+    toId: Long,
+): List<ProjectSection>? {
+    var moved = false
+    fun recurse(list: List<ProjectSection>): List<ProjectSection> = list.map { s ->
+        if (moved) return@map s
+        val reordered = moveTaskInList(s.tasks, fromId, toId)
+        if (reordered != null) {
+            moved = true
+            s.copy(tasks = reordered)
+        } else {
+            s.copy(children = recurse(s.children))
+        }
+    }
+    val result = recurse(sections)
+    return if (moved) result else null
+}
+
+/** The section whose own task list contains [taskId], searched recursively, or null. */
+fun findTaskGroup(sections: List<ProjectSection>, taskId: Long): ProjectSection? {
+    for (s in sections) {
+        if (s.tasks.any { it.id == taskId }) return s
+        findTaskGroup(s.children, taskId)?.let { return it }
+    }
+    return null
+}
+
+/** True when any section anywhere in the tree has at least one task. */
+fun hasAnyTask(sections: List<ProjectSection>): Boolean =
+    sections.any { it.tasks.isNotEmpty() || hasAnyTask(it.children) }
