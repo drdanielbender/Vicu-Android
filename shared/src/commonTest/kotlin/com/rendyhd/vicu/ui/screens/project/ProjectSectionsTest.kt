@@ -143,6 +143,24 @@ class ProjectSectionsTest {
         assertFalse(hasAnyTask(tree))
     }
 
+    // totalTaskCount -------------------------------------------------------
+
+    @Test
+    fun `totalTaskCount sums tasks across the whole subtree`() {
+        val section = ProjectSection(
+            p(10), listOf(t(1)), // 1 direct task
+            listOf(
+                ProjectSection(
+                    p(100), listOf(t(2), t(3)), // child: 2 tasks
+                    listOf(ProjectSection(p(1000), listOf(t(4)))), // grandchild: 1 task
+                ),
+            ),
+        )
+        assertEquals(4, totalTaskCount(section))
+        // a leaf section with 2 tasks returns 2
+        assertEquals(2, totalTaskCount(ProjectSection(p(20), listOf(t(5), t(6)))))
+    }
+
     // supplementary coverage ----------------------------------------------
 
     @Test

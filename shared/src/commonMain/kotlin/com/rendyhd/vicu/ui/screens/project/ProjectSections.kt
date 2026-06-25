@@ -126,3 +126,7 @@ fun findTaskGroup(sections: List<ProjectSection>, taskId: Long): ProjectSection?
 /** True when any section anywhere in the tree has at least one task. */
 fun hasAnyTask(sections: List<ProjectSection>): Boolean =
     sections.any { it.tasks.isNotEmpty() || hasAnyTask(it.children) }
+
+/** Total tasks in [section] and all its descendant sections (for collapsed-section badges). */
+fun totalTaskCount(section: ProjectSection): Int =
+    section.tasks.size + section.children.sumOf { totalTaskCount(it) }
