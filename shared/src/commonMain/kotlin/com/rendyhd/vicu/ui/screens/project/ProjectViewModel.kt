@@ -137,15 +137,9 @@ class ProjectViewModel(
         }
     }
 
-    fun toggleSection(sectionIndex: Int) {
+    fun toggleSection(projectId: Long) {
         _uiState.update { state ->
-            val sections = state.sections.toMutableList()
-            if (sectionIndex in sections.indices) {
-                sections[sectionIndex] = sections[sectionIndex].copy(
-                    isExpanded = !sections[sectionIndex].isExpanded
-                )
-            }
-            state.copy(sections = sections)
+            state.copy(sections = toggleSectionExpanded(state.sections, projectId))
         }
     }
 

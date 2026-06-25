@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -122,8 +123,7 @@ fun ProjectScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            val allEmpty = state.unsectionedTasks.isEmpty() &&
-                state.sections.all { it.tasks.isEmpty() }
+            val allEmpty = state.unsectionedTasks.isEmpty() && !hasAnyTask(state.sections)
 
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 if (allEmpty && !state.isLoading) {
@@ -185,81 +185,29 @@ fun ProjectScreen(
                         }
                     }
 
-                    // Sections (child projects)
-                    state.sections.forEachIndexed { index, section ->
-                        val sectionColor = try {
-                            val hex = section.project.hexColor
-                            if (hex.isNotBlank()) {
-                                Color(
-                                    android.graphics.Color.parseColor(
-                                        if (hex.startsWith("#")) hex else "#$hex"
-                                    )
-                                )
-                            } else {
-                                null
-                            }
-                        } catch (_: Exception) {
-                            null
-                        }
-
-                        item(key = "section_${section.project.id}") {
-                            CollapsibleSection(
-                                title = section.project.title,
-                                color = sectionColor
-                                    ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                                taskCount = section.tasks.size,
-                                isExpanded = section.isExpanded,
-                                onToggle = { viewModel.toggleSection(index) },
-                            )
-                        }
-
-                        if (section.isExpanded) {
-                            items(section.tasks, key = { it.id }) { task ->
-                                val displayTask = if (task.id in state.completedTaskIds) task.copy(done = true) else task
-                                val canDrag = !selectionActive &&
-                                    task.id !in state.completedTaskIds &&
-                                    isManuallyOrdered(task)
-                                ReorderableTaskRow(
-                                    reorderableState = reorderableState,
-                                    task = task,
-                                    displayTask = displayTask,
-                                    canDrag = canDrag,
-                                    selectionActive = selectionActive,
-                                    selected = task.id in selectedIds,
-                                    onDragStarted = { dragMoved = false },
-                                    onDragStopped = {
-                                        if (dragMoved) {
-                                            viewModel.onTaskDropped(task.id)
-                                        } else {
-                                            selectionVm.toggle(task.id)
-                                        }
-                                    },
-                                    onToggleDone = {
-                                        if (task.id in state.completedTaskIds) {
-                                            viewModel.undoComplete(task)
-                                        } else {
-                                            viewModel.toggleDone(task)
-                                        }
-                                    },
-                                    onClick = {
-                                        if (selectionActive) selectionVm.toggle(task.id) else onTaskClick(task.id)
-                                    },
-                                    onSchedule = { viewModel.scheduleTask(task) },
-                                    // Draggable rows enter selection via lift-without-move
-                                    // (onDragStopped above); the rest keep plain long-press.
-                                    onLongClick = if (canDrag) null else ({ selectionVm.toggle(task.id) }),
-                                    contentStartPadding = 16.dp,
-                                )
-                            }
-
-                            item(key = "add_task_section_${section.project.id}") {
-                                AddTaskButton(
-                                    onClick = { onShowTaskEntry(section.project.id, null) },
-                                    modifier = Modifier.padding(start = 16.dp),
-                                )
-                            }
-                        }
-                    }
+                    // Sections (child projects) — recursive renderer handles arbitrary nesting
+                    projectSectionItems(
+                        sections = state.sections,
+                        depth = 0,
+                        reorderableState = reorderableState,
+                        completedTaskIds = state.completedTaskIds,
+                        selectedIds = selectedIds,
+                        selectionActive = selectionActive,
+                        onSectionToggle = { pid -> viewModel.toggleSection(pid) },
+                        onDragStarted = { dragMoved = false },
+                        onDragStopped = { task ->
+                            if (dragMoved) viewModel.onTaskDropped(task.id) else selectionVm.toggle(task.id)
+                        },
+                        onToggleDone = { task ->
+                            if (task.id in state.completedTaskIds) viewModel.undoComplete(task) else viewModel.toggleDone(task)
+                        },
+                        onRowClick = { task ->
+                            if (selectionActive) selectionVm.toggle(task.id) else onTaskClick(task.id)
+                        },
+                        onSchedule = { task -> viewModel.scheduleTask(task) },
+                        onLongClickToggle = { task -> selectionVm.toggle(task.id) },
+                        onAddTask = { pid -> onShowTaskEntry(pid, null) },
+                    )
                 }
             }
         }
@@ -340,6 +288,96 @@ private fun LazyItemScope.ReorderableTaskRow(
                 } else {
                     Modifier
                 },
+            )
+        }
+    }
+}
+
+private fun parseSectionColor(hex: String): Color? =
+    try {
+        if (hex.isNotBlank()) {
+            Color(android.graphics.Color.parseColor(if (hex.startsWith("#")) hex else "#$hex"))
+        } else {
+            null
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+private fun LazyListScope.projectSectionItems(
+    sections: List<ProjectSection>,
+    depth: Int,
+    reorderableState: ReorderableLazyListState,
+    completedTaskIds: Set<Long>,
+    selectedIds: Set<Long>,
+    selectionActive: Boolean,
+    onSectionToggle: (Long) -> Unit,
+    onDragStarted: () -> Unit,
+    onDragStopped: (Task) -> Unit,
+    onToggleDone: (Task) -> Unit,
+    onRowClick: (Task) -> Unit,
+    onSchedule: (Task) -> Unit,
+    onLongClickToggle: (Task) -> Unit,
+    onAddTask: (Long) -> Unit,
+) {
+    sections.forEach { section ->
+        val sectionColor = parseSectionColor(section.project.hexColor)
+        item(key = "section_${section.project.id}") {
+            CollapsibleSection(
+                title = section.project.title,
+                color = sectionColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                taskCount = section.tasks.size,
+                isExpanded = section.isExpanded,
+                onToggle = { onSectionToggle(section.project.id) },
+                modifier = Modifier.padding(start = (depth * 16).dp),
+            )
+        }
+
+        if (section.isExpanded) {
+            items(section.tasks, key = { it.id }) { task ->
+                val displayTask = if (task.id in completedTaskIds) task.copy(done = true) else task
+                val canDrag = !selectionActive &&
+                    task.id !in completedTaskIds &&
+                    isManuallyOrdered(task)
+                ReorderableTaskRow(
+                    reorderableState = reorderableState,
+                    task = task,
+                    displayTask = displayTask,
+                    canDrag = canDrag,
+                    selectionActive = selectionActive,
+                    selected = task.id in selectedIds,
+                    onDragStarted = onDragStarted,
+                    onDragStopped = { onDragStopped(task) },
+                    onToggleDone = { onToggleDone(task) },
+                    onClick = { onRowClick(task) },
+                    onSchedule = { onSchedule(task) },
+                    onLongClick = if (canDrag) null else ({ onLongClickToggle(task) }),
+                    contentStartPadding = ((depth + 1) * 16).dp,
+                )
+            }
+
+            item(key = "add_task_section_${section.project.id}") {
+                AddTaskButton(
+                    onClick = { onAddTask(section.project.id) },
+                    modifier = Modifier.padding(start = ((depth + 1) * 16).dp),
+                )
+            }
+
+            projectSectionItems(
+                sections = section.children,
+                depth = depth + 1,
+                reorderableState = reorderableState,
+                completedTaskIds = completedTaskIds,
+                selectedIds = selectedIds,
+                selectionActive = selectionActive,
+                onSectionToggle = onSectionToggle,
+                onDragStarted = onDragStarted,
+                onDragStopped = onDragStopped,
+                onToggleDone = onToggleDone,
+                onRowClick = onRowClick,
+                onSchedule = onSchedule,
+                onLongClickToggle = onLongClickToggle,
+                onAddTask = onAddTask,
             )
         }
     }
