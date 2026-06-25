@@ -51,53 +51,44 @@ class ProjectViewModel(
 
     init {
         viewModelScope.launch {
-            // Combine project info, children (sections), parent tasks, and child tasks
             combine(
                 projectRepository.getById(projectId),
-                projectRepository.getChildren(projectId),
+                projectRepository.getAll(),
                 taskRepository.getByProjectId(projectId),
-            ) { project, children, parentTasks ->
-                Triple(project, children, parentTasks)
-            }.flatMapLatest { (project, children, parentTasks) ->
-                if (children.isEmpty()) {
+            ) { project, allProjects, parentTasks ->
+                Triple(project, allProjects, parentTasks)
+            }.flatMapLatest { (project, allProjects, parentTasks) ->
+                val descendants = collectDescendants(projectId, allProjects)
+                val unsectioned = sortProjectTasks(parentTasks.filter { !it.done })
+                if (descendants.isEmpty()) {
                     flowOf(
                         ProjectUiState(
                             project = project,
                             sections = emptyList(),
-                            unsectionedTasks = sortProjectTasks(parentTasks.filter { !it.done }),
+                            unsectionedTasks = unsectioned,
                             isLoading = false,
                         )
                     )
                 } else {
-                    // Combine task flows for all child projects
-                    val childTaskFlows = children.map { child ->
-                        taskRepository.getByProjectId(child.id).map { tasks ->
-                            ProjectSection(
-                                project = child,
-                                tasks = sortProjectTasks(tasks.filter { !it.done }),
-                            )
+                    // One task flow per descendant; combine rebuilds the tree whenever any changes.
+                    val taskFlows = descendants.map { descendant ->
+                        taskRepository.getByProjectId(descendant.id).map { tasks ->
+                            descendant.id to sortProjectTasks(tasks.filter { !it.done })
                         }
                     }
-                    combine(childTaskFlows) { sectionArray ->
+                    combine(taskFlows) { pairs ->
                         ProjectUiState(
                             project = project,
-                            sections = sectionArray.toList(),
-                            unsectionedTasks = sortProjectTasks(parentTasks.filter { !it.done }),
+                            sections = buildSectionTree(projectId, allProjects, pairs.toMap()),
+                            unsectionedTasks = unsectioned,
                             isLoading = false,
                         )
                     }
                 }
             }.collect { newState ->
                 _uiState.update { current ->
-                    // Preserve expansion state and completedTaskIds
-                    val sections = newState.sections.map { section ->
-                        val existingExpanded = current.sections
-                            .find { it.project.id == section.project.id }
-                            ?.isExpanded ?: true
-                        section.copy(isExpanded = existingExpanded)
-                    }
                     newState.copy(
-                        sections = sections,
+                        sections = preserveExpansion(newState.sections, current.sections),
                         completedTaskIds = current.completedTaskIds,
                     )
                 }
@@ -126,12 +117,8 @@ class ProjectViewModel(
         moveTaskInList(state.unsectionedTasks, fromId, toId)?.let { reordered ->
             return state.copy(unsectionedTasks = reordered)
         }
-        val idx = state.sections.indexOfFirst { s -> s.tasks.any { it.id == fromId } }
-        if (idx < 0) return null
-        val reordered = moveTaskInList(state.sections[idx].tasks, fromId, toId) ?: return null
-        val sections = state.sections.toMutableList()
-        sections[idx] = sections[idx].copy(tasks = reordered)
-        return state.copy(sections = sections)
+        val movedSections = moveTaskInSections(state.sections, fromId, toId) ?: return null
+        return state.copy(sections = movedSections)
     }
 
     /** Drag released: persist the dropped task's new position from its current neighbors. */
@@ -141,8 +128,7 @@ class ProjectViewModel(
         val (tasks, groupProjectId) = if (inUnsectioned) {
             state.unsectionedTasks to projectId
         } else {
-            val section = state.sections.firstOrNull { s -> s.tasks.any { it.id == taskId } }
-                ?: return
+            val section = findTaskGroup(state.sections, taskId) ?: return
             section.tasks to section.project.id
         }
         val newPosition = dropPositionFor(tasks, taskId) ?: return
