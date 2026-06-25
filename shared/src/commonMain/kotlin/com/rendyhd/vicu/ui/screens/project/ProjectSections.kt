@@ -64,7 +64,10 @@ fun buildSectionTree(
 fun preserveExpansion(new: List<ProjectSection>, old: List<ProjectSection>): List<ProjectSection> {
     val expandedById = HashMap<Long, Boolean>()
     fun index(list: List<ProjectSection>) {
-        list.forEach { expandedById[it.project.id] = it.isExpanded; index(it.children) }
+        list.forEach {
+            expandedById[it.project.id] = it.isExpanded
+            index(it.children)
+        }
     }
     index(old)
     fun apply(list: List<ProjectSection>): List<ProjectSection> = list.map { s ->

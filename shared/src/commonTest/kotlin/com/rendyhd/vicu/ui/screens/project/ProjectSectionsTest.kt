@@ -142,4 +142,30 @@ class ProjectSectionsTest {
         val tree = listOf(ProjectSection(p(10), emptyList(), listOf(ProjectSection(p(100), emptyList()))))
         assertFalse(hasAnyTask(tree))
     }
+
+    // supplementary coverage ----------------------------------------------
+
+    @Test
+    fun `preserveExpansion defaults a new node absent from old to expanded`() {
+        val old = listOf(ProjectSection(p(10), emptyList()))
+        val new = listOf(
+            ProjectSection(p(10), emptyList(), listOf(ProjectSection(p(100), emptyList()))),
+        )
+        val merged = preserveExpansion(new, old)
+        // 100 has no counterpart in old -> defaults to expanded
+        assertTrue(merged[0].children[0].isExpanded)
+    }
+
+    @Test
+    fun `moveTaskInSections returns null when a same-section move involves a dated task`() {
+        val dated = Task(id = 2, title = "t2", dueDate = "2026-05-10T00:00:00Z", position = 20.0)
+        val tree = listOf(ProjectSection(p(10), listOf(t(1, 10.0), dated)))
+        assertNull(moveTaskInSections(tree, fromId = 1, toId = 2))
+    }
+
+    @Test
+    fun `buildSectionTree and collectDescendants return empty for an empty project list`() {
+        assertEquals(emptyList<Long>(), collectDescendants(1L, emptyList()).map { it.id })
+        assertEquals(emptyList<ProjectSection>(), buildSectionTree(1L, emptyList(), emptyMap()))
+    }
 }
