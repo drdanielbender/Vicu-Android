@@ -58,7 +58,11 @@ class ProjectViewModel(
             ) { project, allProjects, parentTasks ->
                 Triple(project, allProjects, parentTasks)
             }.flatMapLatest { (project, allProjects, parentTasks) ->
-                val descendants = collectDescendants(projectId, allProjects)
+                // Exclude archived projects (and, by pruning the chain, their whole
+                // subtrees) so archived sub-projects don't surface as sections — matching
+                // how the drawer hides archived projects from navigation.
+                val activeProjects = allProjects.filter { !it.isArchived }
+                val descendants = collectDescendants(projectId, activeProjects)
                 val unsectioned = sortProjectTasks(parentTasks.filter { !it.done })
                 if (descendants.isEmpty()) {
                     flowOf(
@@ -79,7 +83,7 @@ class ProjectViewModel(
                     combine(taskFlows) { pairs ->
                         ProjectUiState(
                             project = project,
-                            sections = buildSectionTree(projectId, allProjects, pairs.toMap()),
+                            sections = buildSectionTree(projectId, activeProjects, pairs.toMap()),
                             unsectionedTasks = unsectioned,
                             isLoading = false,
                         )
