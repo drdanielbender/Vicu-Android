@@ -359,7 +359,7 @@ data class ProjectSection(
 export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
 ./gradlew :shared:testDebugUnitTest --tests "com.rendyhd.vicu.ui.screens.project.ProjectSectionsTest"
 ```
-Expected: PASS — all 13 tests green, BUILD SUCCESSFUL.
+Expected: PASS — all 12 tests green, BUILD SUCCESSFUL.
 
 - [ ] **Step 5: Commit**
 
@@ -380,8 +380,8 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - Modify: `shared/src/commonMain/kotlin/com/rendyhd/vicu/ui/screens/project/ProjectViewModel.kt`
 
 **Interfaces:**
-- Consumes (from Task 1): `collectDescendants`, `buildSectionTree`, `preserveExpansion`, `toggleSectionExpanded`, `moveTaskInSections`, `findTaskGroup`. Existing utils `sortProjectTasks`, `moveTaskInList`, `dropPositionFor`.
-- Produces (used by Task 3): `fun toggleSection(projectId: Long)` (signature change from `Int` index). `ProjectUiState.sections` is now a nested tree.
+- Consumes (from Task 1): `collectDescendants`, `buildSectionTree`, `preserveExpansion`, `moveTaskInSections`, `findTaskGroup`. Existing utils `sortProjectTasks`, `moveTaskInList`, `dropPositionFor`.
+- Produces (used by Task 3): `ProjectUiState.sections` is now a nested tree (each `ProjectSection` carries `children`). `toggleSection(sectionIndex: Int)` is left untouched here.
 
 - [ ] **Step 1: Replace the section-building flow**
 
@@ -470,39 +470,34 @@ fun onTaskDropped(taskId: Long) {
 }
 ```
 
-- [ ] **Step 4: Change `toggleSection` to key by project id**
+> **Leave `toggleSection(sectionIndex: Int)` unchanged in this task.** The
+> existing flat renderer in `ProjectScreen` still calls it and still iterates
+> `state.sections` (the tree roots), so after this task the app compiles and
+> behaves exactly as today — top-level sections render; the new `children` ride
+> along in state but are not drawn yet. The signature change and nested
+> rendering both land in Task 3, keeping each task independently green.
 
-Replace `toggleSection` (currently `ProjectViewModel.kt:160-170`) with:
+- [ ] **Step 4: Confirm imports**
 
-```kotlin
-fun toggleSection(projectId: Long) {
-    _uiState.update { state ->
-        state.copy(sections = toggleSectionExpanded(state.sections, projectId))
-    }
-}
-```
+`ProjectSection` and the helpers (`collectDescendants`, `buildSectionTree`,
+`preserveExpansion`, `moveTaskInSections`, `findTaskGroup`) are in the same
+package as the view model — **no new import needed**. `combine`,
+`flatMapLatest`, `flowOf`, `map`, `update` are already imported. `getChildren`
+is no longer called; there is no import to remove (it was a method call). Leave
+`sortProjectTasks`, `dropPositionFor`, `moveTaskInList` imports in place.
 
-- [ ] **Step 5: Add imports / remove dead ones**
-
-Ensure these are imported at the top of `ProjectViewModel.kt`:
-
-```kotlin
-import com.rendyhd.vicu.ui.screens.project.collectDescendants   // same package — only if IDE flags it; usually unneeded
-```
-
-(They are in the same package as the view model, so no import is required. Remove any now-unused import such as an explicit `getChildren` reference — there is none to import, but confirm `Project`/`Task` imports remain since other code uses them.)
-
-- [ ] **Step 6: Verify it compiles**
+- [ ] **Step 5: Verify it compiles and tests pass (green gate)**
 
 ```bash
 export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
-./gradlew :shared:compileDebugKotlinAndroid :shared:testDebugUnitTest
+./gradlew :shared:testDebugUnitTest assembleDebug
 ```
-Expected: BUILD SUCCESSFUL. The Task 1 tests still pass. (The flow wiring is coroutine/Flow code verified by compilation + the pure-logic tests; `ProjectScreen` still references the old `toggleSection(Int)` and will fail to compile until Task 3 — so run only `:shared:compileDebugKotlinAndroid` for the file in isolation is not possible; expect the screen compile error here and resolve it in Task 3. If you prefer a green gate, do Steps in Task 3 before compiling the whole module.)
+Expected: BUILD SUCCESSFUL. Task 1's tests still pass. The app builds and shows
+top-level project sections as before (nested children are built into
+`state.sections` but not yet rendered — that is Task 3). The Flow wiring itself
+is coroutine code verified here by compilation plus the Task 1 pure-logic tests.
 
-> Sequencing note: `toggleSection`'s signature change couples Tasks 2 and 3. Make the Task 3 edits before running the full-module compile. The single commit below covers Task 2's logic; the module is verified green at the end of Task 3.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add shared/src/commonMain/kotlin/com/rendyhd/vicu/ui/screens/project/ProjectViewModel.kt
@@ -513,18 +508,33 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-## Task 3: Recursive renderer in `ProjectScreen`
+## Task 3: Recursive renderer + toggle-by-id
 
 **Files:**
 - Modify: `shared/src/commonMain/kotlin/com/rendyhd/vicu/ui/screens/project/ProjectScreen.kt`
+- Modify: `shared/src/commonMain/kotlin/com/rendyhd/vicu/ui/screens/project/ProjectViewModel.kt:160-170` (change `toggleSection` signature)
 
 **Interfaces:**
-- Consumes (from Task 2): `ProjectUiState.sections` (nested), `viewModel.toggleSection(projectId: Long)`. From Task 1: `hasAnyTask`. Existing `ReorderableTaskRow` private composable, `CollapsibleSection`, `AddTaskButton`.
-- Produces: none (terminal UI).
+- Consumes (from Task 2): `ProjectUiState.sections` (nested). From Task 1: `hasAnyTask`, `toggleSectionExpanded`. Existing `ReorderableTaskRow` private composable, `CollapsibleSection`, `AddTaskButton`.
+- Produces: `viewModel.toggleSection(projectId: Long)` (signature changed from `Int`).
 
-- [ ] **Step 1: Add a recursive `LazyListScope` extension**
+- [ ] **Step 1: Change `toggleSection` to key by project id**
 
-Add this private extension at the bottom of `ProjectScreen.kt` (top-level, file scope), beside `ReorderableTaskRow`. It renders one section tree depth-first; indentation is `depth * 16.dp`.
+In `ProjectViewModel.kt`, replace `toggleSection` (currently `:160-170`) with:
+
+```kotlin
+fun toggleSection(projectId: Long) {
+    _uiState.update { state ->
+        state.copy(sections = toggleSectionExpanded(state.sections, projectId))
+    }
+}
+```
+
+`toggleSectionExpanded` is in the same package (Task 1) — no import needed.
+
+- [ ] **Step 2: Add a recursive `LazyListScope` extension**
+
+Add this private extension at the bottom of `ProjectScreen.kt` (top-level, file scope), beside `ReorderableTaskRow`. It renders one section tree depth-first; indentation is `depth * 16.dp`. It calls `parseSectionColor`, which you add in Step 3 — add both before compiling.
 
 ```kotlin
 private fun LazyListScope.projectSectionItems(
@@ -607,7 +617,7 @@ private fun LazyListScope.projectSectionItems(
 }
 ```
 
-- [ ] **Step 2: Add the color-parse helper**
+- [ ] **Step 3: Add the color-parse helper**
 
 The current code parses the section color inline inside a `try/catch` in the composable. Compose forbids try/catch around composable calls and the recursion needs it as a plain function, so extract it. Add this top-level private function in `ProjectScreen.kt`:
 
@@ -624,7 +634,7 @@ private fun parseSectionColor(hex: String): Color? =
     }
 ```
 
-- [ ] **Step 3: Replace the inline section loop with the extension call**
+- [ ] **Step 4: Replace the inline section loop with the extension call**
 
 In the `LazyColumn { ... }` body, replace the entire `state.sections.forEachIndexed { index, section -> ... }` block (currently `ProjectScreen.kt:189-262`) with:
 
@@ -653,7 +663,7 @@ projectSectionItems(
 )
 ```
 
-- [ ] **Step 4: Make the empty check recursive**
+- [ ] **Step 5: Make the empty check recursive**
 
 Replace the `allEmpty` line (currently `ProjectScreen.kt:125-126`):
 
@@ -668,19 +678,19 @@ with:
 val allEmpty = state.unsectionedTasks.isEmpty() && !hasAnyTask(state.sections)
 ```
 
-- [ ] **Step 5: Fix imports**
+- [ ] **Step 6: Fix imports**
 
 Add any imports the IDE flags. Likely needed: none beyond what's present (`Modifier`, `padding`, `dp`, `Color`, `MaterialTheme`, `CollapsibleSection`, `AddTaskButton`, `isManuallyOrdered` are already imported). `ProjectSection`, `hasAnyTask` are same-package — no import. Confirm `ReorderableLazyListState` import remains (it is already imported for `ReorderableTaskRow`).
 
-- [ ] **Step 6: Verify the whole module compiles and tests pass**
+- [ ] **Step 7: Verify the whole module compiles and tests pass**
 
 ```bash
 export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
 ./gradlew :shared:testDebugUnitTest assembleDebug
 ```
-Expected: BUILD SUCCESSFUL. Task 1 tests pass; app assembles. No `toggleSection(Int)` references remain.
+Expected: BUILD SUCCESSFUL. Task 1 tests pass; app assembles. No `toggleSection(Int)` references remain (the screen now calls `toggleSection(pid: Long)`).
 
-- [ ] **Step 7: Manual smoke test (device/emulator)**
+- [ ] **Step 8: Manual smoke test (device/emulator)**
 
 Build + install, open a project that has child projects with their own grandchild projects:
 ```bash
@@ -688,10 +698,11 @@ Build + install, open a project that has child projects with their own grandchil
 ```
 Verify: grandchild sections appear nested under their parent section, indented one extra step (16dp) per level; collapsing a parent section hides its sub-sections; dragging an undated task within a (nested) section reorders it; "Add Task" appears under every section; no "Add Section" button anywhere.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add shared/src/commonMain/kotlin/com/rendyhd/vicu/ui/screens/project/ProjectScreen.kt
+git add shared/src/commonMain/kotlin/com/rendyhd/vicu/ui/screens/project/ProjectScreen.kt \
+        shared/src/commonMain/kotlin/com/rendyhd/vicu/ui/screens/project/ProjectViewModel.kt
 git commit -m "feat: render nested project sub-sections recursively with depth indent
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -701,6 +712,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ## Self-Review Notes
 
-- **Spec coverage:** recursive data model (Task 1 `ProjectSection`/`buildSectionTree`); tree construction from `getAll()` (Task 2 Step 1); recursive toggle/move/drop (Task 1 helpers + Task 2 Steps 2-4); recursive renderer + 16dp indent + recursive empty check (Task 3); no Add Section button, per-section Add Task kept at depth (Task 3 Step 1); testing (Task 1 unit tests + build verification). All spec sections map to a task.
-- **Type consistency:** `toggleSection(projectId: Long)` defined in Task 2 Step 4 and consumed in Task 3 Step 3. `ProjectSection(project, tasks, children, isExpanded)` constructor used consistently in tests and renderer. Helper names (`collectDescendants`, `buildSectionTree`, `preserveExpansion`, `toggleSectionExpanded`, `moveTaskInSections`, `findTaskGroup`, `hasAnyTask`) identical across Tasks 1-3.
-- **Sequencing:** the `toggleSection` signature change couples Task 2 and Task 3; the full-module green gate lands at Task 3 Step 6, as flagged in Task 2 Step 6.
+- **Spec coverage:** recursive data model (Task 1 `ProjectSection`/`buildSectionTree`); tree construction from `getAll()` (Task 2 Step 1); recursive move/drop (Task 1 helpers + Task 2 Steps 2-3); recursive toggle (Task 1 `toggleSectionExpanded` + Task 3 Step 1); recursive renderer + 16dp indent + recursive empty check (Task 3 Steps 2-5); no Add Section button, per-section Add Task kept at depth (Task 3 Step 2); testing (Task 1 unit tests + build verification). All spec sections map to a task.
+- **Type consistency:** `toggleSection(projectId: Long)` defined in Task 3 Step 1 and called via `onSectionToggle` in Task 3 Step 4. `ProjectSection(project, tasks, children, isExpanded)` constructor used consistently in tests, view model, and renderer. Helper names (`collectDescendants`, `buildSectionTree`, `preserveExpansion`, `toggleSectionExpanded`, `moveTaskInSections`, `findTaskGroup`, `hasAnyTask`) identical across Tasks 1-3.
+- **Independently green tasks:** Task 1 ends with passing unit tests. Task 2 keeps `toggleSection(Int)` and the flat renderer, so the module compiles and behaves as today (top-level sections only) — verified by `:shared:testDebugUnitTest assembleDebug`. Task 3 adds nested rendering plus the `toggleSection(Long)` change together, so it too ends green. No task depends on a later task to compile.
+- **Indentation parity:** at depth 0 the formulae reduce to the current values (header start 0dp, task `contentStartPadding` 16dp, add-task start 16dp), so existing single-level projects render pixel-identically; each deeper level adds a constant 16dp.
