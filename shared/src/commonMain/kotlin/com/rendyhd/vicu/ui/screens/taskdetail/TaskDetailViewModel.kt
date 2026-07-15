@@ -5,6 +5,7 @@ import com.rendyhd.vicu.util.PlatformFiles
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rendyhd.vicu.data.local.BehaviorPrefsStore
+import com.rendyhd.vicu.data.local.NlpPrefsStore
 import com.rendyhd.vicu.domain.model.Attachment
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Project
@@ -20,6 +21,11 @@ import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.DescriptionHtml
 import com.rendyhd.vicu.util.ImageTokens
 import com.rendyhd.vicu.util.NetworkResult
+import com.rendyhd.vicu.util.parser.ParseResult
+import com.rendyhd.vicu.util.parser.ParserConfig
+import com.rendyhd.vicu.util.parser.TaskParser
+import com.rendyhd.vicu.util.parser.TokenType
+import com.rendyhd.vicu.util.parser.extractBangToday
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -50,6 +56,10 @@ data class TaskDetailUiState(
     val isDeleted: Boolean = false,
     val inboxProjectId: Long = 0L,
     val isUploadingImage: Boolean = false,
+    val parseResult: ParseResult? = null,
+    val parserConfig: ParserConfig = ParserConfig(),
+    val suppressedTypes: Set<TokenType> = emptySet(),
+    val manuallyEditedTypes: Set<TokenType> = emptySet(),
 )
 
 class TaskDetailViewModel(
@@ -59,6 +69,7 @@ class TaskDetailViewModel(
     private val projectRepository: ProjectRepository,
     private val authManager: AuthManager,
     private val behaviorPrefsStore: BehaviorPrefsStore,
+    private val nlpPrefsStore: NlpPrefsStore,
     private val platformFiles: PlatformFiles,
 ) : ViewModel() {
 
@@ -78,6 +89,9 @@ class TaskDetailViewModel(
     /** Preserved link HTML stripped from description for display, re-appended on save. */
     private var preservedLinkHtml = ""
 
+    /** Raw token text retained when a parse-preview chip is dismissed. */
+    private var suppressedRawTexts: Map<TokenType, List<String>> = emptyMap()
+
     private val _relationSearchQuery = MutableStateFlow("")
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -89,6 +103,24 @@ class TaskDetailViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    init {
+        viewModelScope.launch {
+            nlpPrefsStore.config.collect { config ->
+                _uiState.update { state ->
+                    val newConfig = config.copy(suppressTypes = state.suppressedTypes)
+                    state.copy(
+                        parserConfig = newConfig,
+                        parseResult = state.parseResult?.let {
+                            state.task?.title?.takeIf(String::isNotBlank)?.let { title ->
+                                TaskParser.parse(title, newConfig)
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     fun loadTask(taskId: Long) {
         if (taskId == taskIdLoaded) return
         taskIdLoaded = taskId
@@ -98,6 +130,7 @@ class TaskDetailViewModel(
 
         // Reset state for the new task so stale data from the previous task doesn't persist
         preservedLinkHtml = ""
+        suppressedRawTexts = emptyMap()
         _uiState.update {
             it.copy(
                 task = null,
@@ -105,6 +138,10 @@ class TaskDetailViewModel(
                 isLoading = true,
                 isDeleted = false,
                 error = null,
+                parseResult = null,
+                suppressedTypes = emptySet(),
+                manuallyEditedTypes = emptySet(),
+                parserConfig = it.parserConfig.copy(suppressTypes = emptySet()),
             )
         }
 
@@ -178,7 +215,41 @@ class TaskDetailViewModel(
     }
 
     fun updateTitle(title: String) {
-        _uiState.update { it.copy(task = it.task?.copy(title = title)) }
+        _uiState.update { state ->
+            val activeSuppressed = state.suppressedTypes.filter { type ->
+                val texts = suppressedRawTexts[type] ?: return@filter false
+                texts.any { title.contains(it) }
+            }.toSet()
+            if (activeSuppressed != state.suppressedTypes) {
+                suppressedRawTexts = suppressedRawTexts.filterKeys { it in activeSuppressed }
+            }
+
+            val config = state.parserConfig.copy(suppressTypes = activeSuppressed)
+            state.copy(
+                task = state.task?.copy(title = title),
+                parseResult = title.takeIf(String::isNotBlank)?.let { TaskParser.parse(it, config) },
+                suppressedTypes = activeSuppressed,
+                parserConfig = config,
+            )
+        }
+    }
+
+    fun suppressType(type: TokenType) {
+        _uiState.update { state ->
+            val result = state.parseResult ?: return@update state
+            suppressedRawTexts = suppressedRawTexts + (
+                type to result.tokens.filter { it.type == type }.map { it.raw }
+            )
+            val newSuppressed = state.suppressedTypes + type
+            val config = state.parserConfig.copy(suppressTypes = newSuppressed)
+            state.copy(
+                parseResult = state.task?.title?.takeIf(String::isNotBlank)?.let {
+                    TaskParser.parse(it, config)
+                },
+                suppressedTypes = newSuppressed,
+                parserConfig = config,
+            )
+        }
     }
 
     fun updateDescription(description: String) {
@@ -186,31 +257,59 @@ class TaskDetailViewModel(
     }
 
     fun setDueDate(dueDate: String) {
-        _uiState.update { it.copy(task = it.task?.copy(dueDate = dueDate)) }
+        _uiState.update {
+            it.copy(
+                task = it.task?.copy(dueDate = dueDate),
+                manuallyEditedTypes = it.manuallyEditedTypes + TokenType.DATE,
+            )
+        }
     }
 
     fun clearDueDate() {
-        _uiState.update { it.copy(task = it.task?.copy(dueDate = Constants.NULL_DATE_STRING)) }
+        _uiState.update {
+            it.copy(
+                task = it.task?.copy(dueDate = Constants.NULL_DATE_STRING),
+                manuallyEditedTypes = it.manuallyEditedTypes + TokenType.DATE,
+            )
+        }
     }
 
     fun cyclePriority() {
         _uiState.update {
             val current = it.task?.priority ?: 0
-            it.copy(task = it.task?.copy(priority = (current + 1) % 5))
+            it.copy(
+                task = it.task?.copy(priority = (current + 1) % 5),
+                manuallyEditedTypes = it.manuallyEditedTypes + TokenType.PRIORITY,
+            )
         }
     }
 
     fun setPriority(value: Int) {
-        _uiState.update { it.copy(task = it.task?.copy(priority = value.coerceIn(0, 4))) }
+        _uiState.update {
+            it.copy(
+                task = it.task?.copy(priority = value.coerceIn(0, 4)),
+                manuallyEditedTypes = it.manuallyEditedTypes + TokenType.PRIORITY,
+            )
+        }
     }
 
     /** Clears a recurrence set elsewhere (e.g. desktop); persisted on dismiss via saveIfChanged. */
     fun clearRecurrence() {
-        _uiState.update { it.copy(task = it.task?.copy(repeatAfter = 0, repeatMode = 0)) }
+        _uiState.update {
+            it.copy(
+                task = it.task?.copy(repeatAfter = 0, repeatMode = 0),
+                manuallyEditedTypes = it.manuallyEditedTypes + TokenType.RECURRENCE,
+            )
+        }
     }
 
     fun setProject(projectId: Long) {
-        _uiState.update { it.copy(task = it.task?.copy(projectId = projectId)) }
+        _uiState.update {
+            it.copy(
+                task = it.task?.copy(projectId = projectId),
+                manuallyEditedTypes = it.manuallyEditedTypes + TokenType.PROJECT,
+            )
+        }
     }
 
     fun addLabel(labelId: Long) {
@@ -456,10 +555,41 @@ class TaskDetailViewModel(
 
     fun saveIfChanged() {
         val state = _uiState.value
-        val task = state.task ?: return
+        val taskWithRawTitle = state.task ?: return
         val original = state.originalTask ?: return
 
-        if (task == original) return
+        val shortcutResult = when {
+            state.parserConfig.enabled && state.parseResult != null -> applyTaskEditShortcuts(
+                task = taskWithRawTitle,
+                parseResult = state.parseResult,
+                projects = state.allProjects,
+                manuallyEditedTypes = state.manuallyEditedTypes,
+            )
+            !state.parserConfig.enabled &&
+                state.parserConfig.bangToday &&
+                taskWithRawTitle.title != original.title &&
+                TokenType.DATE !in state.manuallyEditedTypes -> {
+                val bang = extractBangToday(taskWithRawTitle.title)
+                if (bang.dueDate != null) {
+                    TaskEditShortcutResult(
+                        task = taskWithRawTitle.copy(
+                            title = bang.title,
+                            dueDate = DateUtils.todayStartIso(),
+                        ),
+                        labelNames = emptyList(),
+                    )
+                } else {
+                    TaskEditShortcutResult(taskWithRawTitle, emptyList())
+                }
+            }
+            else -> TaskEditShortcutResult(taskWithRawTitle, emptyList())
+        }
+        val task = shortcutResult.task
+        val parsedLabelNames = shortcutResult.labelNames.filterNot { labelName ->
+            task.labels.any { it.title.equals(labelName, ignoreCase = true) }
+        }
+
+        if (task == original && parsedLabelNames.isEmpty()) return
 
         // When the task's project changed, move its subtasks too: each subtask is a full
         // task with its own project_id and Vikunja does not cascade the move (issue #6).
@@ -485,10 +615,46 @@ class TaskDetailViewModel(
                     }
                     val split = DescriptionHtml.splitForEditor(result.data.description)
                     preservedLinkHtml = split.linkHtml
+                    suppressedRawTexts = emptyMap()
                     val displayDesc = ImageTokens.buildValue(split.htmlBody, split.imageRefs)
                     val displayed = result.data.copy(description = displayDesc)
                     _uiState.update {
-                        it.copy(isSaving = false, task = displayed, originalTask = displayed)
+                        it.copy(
+                            isSaving = false,
+                            task = displayed,
+                            originalTask = displayed,
+                            parseResult = null,
+                            suppressedTypes = emptySet(),
+                            manuallyEditedTypes = emptySet(),
+                            parserConfig = it.parserConfig.copy(suppressTypes = emptySet()),
+                        )
+                    }
+
+                    for (labelName in parsedLabelNames) {
+                        val labelId = state.allLabels
+                            .firstOrNull { it.title.equals(labelName, ignoreCase = true) }
+                            ?.id
+                            ?: when (
+                                val createResult = labelRepository.create(
+                                    Label(id = 0L, title = labelName, hexColor = ""),
+                                )
+                            ) {
+                                is NetworkResult.Success -> createResult.data.id
+                                is NetworkResult.Error -> {
+                                    Logger.w(TAG, "Auto-create label '$labelName' failed: ${createResult.message}")
+                                    null
+                                }
+                                is NetworkResult.Loading -> null
+                            }
+
+                        if (labelId != null) {
+                            when (val addResult = labelRepository.addToTask(displayed.id, labelId)) {
+                                is NetworkResult.Error -> _uiState.update {
+                                    it.copy(error = addResult.message)
+                                }
+                                else -> {}
+                            }
+                        }
                     }
                 }
                 is NetworkResult.Error -> {

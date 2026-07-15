@@ -3,6 +3,7 @@ package com.rendyhd.vicu.ui.screens.taskdetail
 import androidx.activity.compose.BackHandler
 import com.rendyhd.vicu.ui.rememberImagePicker
 import com.rendyhd.vicu.ui.rememberFilePicker
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,8 +65,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
 import com.rendyhd.vicu.ui.components.picker.LabelPickerDialog
@@ -75,11 +80,15 @@ import com.rendyhd.vicu.ui.components.picker.RelationTaskPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ReminderPickerDialog
 import com.rendyhd.vicu.ui.components.picker.VicuDatePickerDialog
 import com.rendyhd.vicu.ui.components.task.DescriptionField
+import com.rendyhd.vicu.ui.components.task.NlpAutocompleteDropdown
+import com.rendyhd.vicu.ui.components.task.NlpVisualTransformation
+import com.rendyhd.vicu.ui.components.task.ParseChipRow
 import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.ImageTokens
 import com.rendyhd.vicu.util.ReminderFormat
 import com.rendyhd.vicu.util.parseHexColor
+import com.rendyhd.vicu.util.parser.getPrefixes
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -98,12 +107,21 @@ fun TaskDetailScreen(
     var showSubtaskInput by remember { mutableStateOf(false) }
     var showRelationPicker by remember { mutableStateOf(false) }
     val relationSearchResults by viewModel.relationSearchResults.collectAsState()
+    val isDarkTheme = isSystemInDarkTheme()
+    var titleFieldValue by remember { mutableStateOf(TextFieldValue("")) }
 
     val filePickerLauncher = rememberFilePicker(viewModel::uploadAttachment)
     val imagePickerLauncher = rememberImagePicker(viewModel::addImageAttachment)
 
     LaunchedEffect(taskId) {
         viewModel.loadTask(taskId)
+    }
+
+    LaunchedEffect(state.task?.title) {
+        val title = state.task?.title ?: return@LaunchedEffect
+        if (titleFieldValue.text != title) {
+            titleFieldValue = titleFieldValue.copy(text = title)
+        }
     }
 
     LaunchedEffect(state.isDeleted) {
@@ -169,17 +187,58 @@ fun TaskDetailScreen(
             ) {
             // Title
             item(key = "title") {
-                OutlinedTextField(
-                    value = task.title,
-                    onValueChange = viewModel::updateTitle,
-                    placeholder = { Text("Task title") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = MaterialTheme.typography.titleMedium,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences,
-                    ),
-                )
+                var fieldSize by remember { mutableStateOf(IntSize.Zero) }
+                Column {
+                    Box {
+                        OutlinedTextField(
+                            value = titleFieldValue,
+                            onValueChange = { newValue ->
+                                titleFieldValue = newValue
+                                viewModel.updateTitle(newValue.text)
+                            },
+                            placeholder = { Text("Task title") },
+                            maxLines = 3,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onSizeChanged { fieldSize = it },
+                            textStyle = MaterialTheme.typography.titleMedium,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                            ),
+                            visualTransformation = NlpVisualTransformation(
+                                tokens = state.parseResult?.tokens ?: emptyList(),
+                                isDarkTheme = isDarkTheme,
+                            ),
+                        )
+
+                        NlpAutocompleteDropdown(
+                            inputValue = titleFieldValue.text,
+                            cursorPosition = titleFieldValue.selection.start,
+                            prefixes = getPrefixes(state.parserConfig.syntaxMode),
+                            projects = state.allProjects,
+                            labels = state.allLabels,
+                            enabled = state.parserConfig.enabled,
+                            onSelect = { newText, newCursor ->
+                                titleFieldValue = TextFieldValue(
+                                    text = newText,
+                                    selection = TextRange(newCursor),
+                                )
+                                viewModel.updateTitle(newText)
+                            },
+                            anchorSize = fieldSize,
+                        )
+                    }
+
+                    val parseResult = state.parseResult
+                    if (parseResult != null && parseResult.tokens.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ParseChipRow(
+                            parseResult = parseResult,
+                            isDarkTheme = isDarkTheme,
+                            onDismiss = viewModel::suppressType,
+                        )
+                    }
+                }
             }
 
             // Description
