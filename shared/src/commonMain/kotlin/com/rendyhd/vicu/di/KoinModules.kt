@@ -126,6 +126,11 @@ val commonModule = module {
         )
     }
     single {
+        OidcHandler(
+            apiServiceProvider = { get() }
+        )
+    }
+    single {
         SyncEngine(
             pendingActionDao = get(),
             taskDao = get(),

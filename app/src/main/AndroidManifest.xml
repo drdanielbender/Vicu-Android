@@ -20,7 +20,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Vicu">
 
-        <!-- Disable default WorkManager initializer (we use HiltWorkerFactory) -->
+        <!-- Koin initializes WorkManager with its worker factory. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

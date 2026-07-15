@@ -1,8 +1,8 @@
 package com.rendyhd.vicu.auth
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class RefreshBackoffTest {
 
@@ -26,7 +26,6 @@ class RefreshBackoffTest {
         assertEquals(20_000L, RefreshBackoffPolicy.nextDelayMs(RefreshFailure.ServerError, 2))
         assertEquals(40_000L, RefreshBackoffPolicy.nextDelayMs(RefreshFailure.ServerError, 3))
         assertEquals(80_000L, RefreshBackoffPolicy.nextDelayMs(RefreshFailure.ServerError, 4))
-        // From here on, the cap holds.
         assertEquals(120_000L, RefreshBackoffPolicy.nextDelayMs(RefreshFailure.ServerError, 5))
         assertEquals(120_000L, RefreshBackoffPolicy.nextDelayMs(RefreshFailure.ServerError, 6))
         assertEquals(120_000L, RefreshBackoffPolicy.nextDelayMs(RefreshFailure.ServerError, 99))
@@ -46,7 +45,6 @@ class RefreshBackoffTest {
 
     @Test
     fun `rate limited ignores prior consecutive failure count`() {
-        // RateLimited should always honor the header; it doesn't double like 5xx.
         val delay = RefreshBackoffPolicy.nextDelayMs(RefreshFailure.RateLimited(retryAfterSecs = 90), 4)
         assertEquals(90_000L, delay)
     }
@@ -54,13 +52,13 @@ class RefreshBackoffTest {
     @Test
     fun `Unauthorized is treated as terminal`() {
         val delay = RefreshBackoffPolicy.nextDelayMs(RefreshFailure.Unauthorized, 0)
-        assertTrue("Expected a very large delay, got $delay", delay >= 1_000_000_000L)
+        assertTrue(delay >= 1_000_000_000L, "Expected a very large delay, got $delay")
     }
 
     @Test
     fun `NoRefreshToken is treated as terminal`() {
         val delay = RefreshBackoffPolicy.nextDelayMs(RefreshFailure.NoRefreshToken, 0)
-        assertTrue("Expected a very large delay, got $delay", delay >= 1_000_000_000L)
+        assertTrue(delay >= 1_000_000_000L, "Expected a very large delay, got $delay")
     }
 
     @Test

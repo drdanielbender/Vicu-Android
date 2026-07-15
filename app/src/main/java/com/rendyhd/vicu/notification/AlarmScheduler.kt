@@ -16,11 +16,8 @@ import com.rendyhd.vicu.util.DateUtils
 
 import kotlinx.datetime.Instant
 import kotlin.time.Duration.Companion.seconds
-import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
-class AlarmScheduler @Inject constructor(
+class AlarmScheduler(
     private val context: Context,
     private val taskDao: TaskDao,
     private val taskMapper: TaskMapper,

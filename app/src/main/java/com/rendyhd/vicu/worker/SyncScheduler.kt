@@ -42,4 +42,11 @@ object SyncScheduler {
             request,
         )
     }
+
+    fun cancel(context: Context) {
+        WorkManager.getInstance(context).apply {
+            cancelUniqueWork(WORK_NAME_ONLINE)
+            cancelUniqueWork(WORK_NAME_IMMEDIATE)
+        }
+    }
 }

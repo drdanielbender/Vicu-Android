@@ -4,11 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 
-import javax.inject.Inject
-import javax.inject.Singleton
-
-@Singleton
-class NotificationChannelManager @Inject constructor(
+class NotificationChannelManager(
     private val context: Context,
 ) {
     companion object {

@@ -16,11 +16,8 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
-class DailySummaryScheduler @Inject constructor(
+class DailySummaryScheduler(
     private val context: Context,
 ) {
     companion object {

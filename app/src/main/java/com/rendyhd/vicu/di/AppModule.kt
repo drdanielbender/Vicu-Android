@@ -18,6 +18,7 @@ import com.rendyhd.vicu.data.local.PlatformContext
 import com.rendyhd.vicu.data.repository.AndroidRepositoryHooks
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
 import com.rendyhd.vicu.notification.AlarmScheduler
+import com.rendyhd.vicu.notification.DailySummaryScheduler
 import com.rendyhd.vicu.notification.NotificationChannelManager
 import com.rendyhd.vicu.util.CompletionSoundPlayer
 import com.rendyhd.vicu.util.AndroidNetworkMonitor
@@ -33,6 +34,8 @@ import com.rendyhd.vicu.worker.SyncWorker
 import com.rendyhd.vicu.worker.DailySummaryWorker
 import com.rendyhd.vicu.worker.TokenRefreshWorker
 import com.rendyhd.vicu.widget.TaskWidgetWorker
+import kotlinx.coroutines.CoroutineScope
+import okio.Path.Companion.toOkioPath
 
 // Import all 17 ViewModels
 import com.rendyhd.vicu.ui.SyncStateViewModel
@@ -57,13 +60,16 @@ val appModule = module {
     single { PlatformContext(androidContext()) }
     single<TokenStorage> { AndroidSecureTokenStorage(androidContext()) }
     single<PlatformAuthHooks> { AndroidAuthHooks(androidContext()) }
-    single<PlatformRepositoryHooks> { AndroidRepositoryHooks(androidContext(), get(), get()) }
+    single<PlatformRepositoryHooks> {
+        AndroidRepositoryHooks(androidContext(), get(), get(), get<CoroutineScope>())
+    }
     single<NetworkMonitor> { AndroidNetworkMonitor(androidContext()) }
     single<HttpClientEngine> { OkHttp.create() }
     single<PlatformFiles> { AndroidPlatformFiles(get()) }
     single<PlatformSettingsHooks> { AndroidSettingsHooks(androidContext(), get()) }
 
     single { AlarmScheduler(androidContext(), get(), get(), get()) }
+    single { DailySummaryScheduler(androidContext()) }
     single { CompletionSoundPlayer(androidContext(), get()) }
     single { NotificationChannelManager(androidContext()) }
 
@@ -94,7 +100,7 @@ val appModule = module {
             }
             .diskCache(
                 DiskCache.Builder()
-                    .directory(androidContext().cacheDir.resolve("image_cache"))
+                    .directory(androidContext().cacheDir.resolve("image_cache").toOkioPath())
                     .maxSizeBytes(50L * 1024 * 1024)
                     .build()
             )

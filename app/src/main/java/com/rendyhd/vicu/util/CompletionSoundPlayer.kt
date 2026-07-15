@@ -9,8 +9,6 @@ import androidx.core.net.toUri
 import com.rendyhd.vicu.data.local.BehaviorPrefsStore
 
 import kotlinx.coroutines.flow.first
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Plays a short sound when the user completes a task. Default is the system's
@@ -21,8 +19,7 @@ import javax.inject.Singleton
  * - Any failure (missing file, codec issue, no notification sound configured)
  *   is logged and swallowed — completion sound is a non-essential affordance.
  */
-@Singleton
-class CompletionSoundPlayer @Inject constructor(
+class CompletionSoundPlayer(
     private val context: Context,
     private val prefs: BehaviorPrefsStore,
 ) {
