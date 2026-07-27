@@ -12,9 +12,12 @@ import android.content.pm.ApplicationInfo
 import java.util.concurrent.TimeUnit
 import com.rendyhd.vicu.auth.AndroidAuthHooks
 import com.rendyhd.vicu.auth.AndroidSecureTokenStorage
+import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.auth.PlatformAuthHooks
 import com.rendyhd.vicu.auth.TokenStorage
 import com.rendyhd.vicu.data.local.PlatformContext
+import com.rendyhd.vicu.data.remote.BaseUrlHolder
+import com.rendyhd.vicu.data.remote.VikunjaImageInterceptor
 import com.rendyhd.vicu.data.repository.AndroidRepositoryHooks
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
 import com.rendyhd.vicu.notification.AlarmScheduler
@@ -35,6 +38,7 @@ import com.rendyhd.vicu.worker.DailySummaryWorker
 import com.rendyhd.vicu.worker.TokenRefreshWorker
 import com.rendyhd.vicu.widget.TaskWidgetWorker
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toOkioPath
 
 // Import all 17 ViewModels
@@ -74,10 +78,24 @@ val appModule = module {
     single { NotificationChannelManager(androidContext()) }
 
     single {
+        val baseUrlHolder = get<BaseUrlHolder>()
+        val authManager = get<AuthManager>()
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(
+                VikunjaImageInterceptor(
+                    getFullBaseUrl = baseUrlHolder::getFullBaseUrl,
+                    initializeBaseUrl = baseUrlHolder::ensureInitializedBlocking,
+                    getCachedToken = authManager::getBestTokenSync,
+                    initializeAuth = {
+                        runBlocking {
+                            authManager.ensureInitializedAndGetToken()
+                        }
+                    },
+                )
+            )
 
         val context = androidContext()
         val isDebug = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
