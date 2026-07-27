@@ -3,29 +3,33 @@ package com.rendyhd.vicu.worker
 import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.data.local.dao.LabelDao
 import com.rendyhd.vicu.data.local.dao.PendingActionDao
+import com.rendyhd.vicu.data.local.dao.normalizeQueuedPatchPayload
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.LabelMapper
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.data.remote.api.LabelTaskDto
+import com.rendyhd.vicu.data.remote.api.MergePatches
 import com.rendyhd.vicu.data.remote.api.TaskDto
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.data.remote.BaseUrlHolder
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
-import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.isRetriableNetworkError
 import com.rendyhd.vicu.util.Logger
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration.Companion.seconds
 
 fun remapLabelTaskPayload(payload: String, tempId: Long, realId: Long): String? {
     val parts = payload.split(":")
     if (parts.size != 2) return null
-    if (parts[0].toLongOrNull() != tempId) return null
-    return "$realId:${parts[1]}"
+    val taskId = parts[0].toLongOrNull() ?: return null
+    val labelId = parts[1].toLongOrNull() ?: return null
+    if (taskId != tempId && labelId != tempId) return null
+    return "${if (taskId == tempId) realId else taskId}:${if (labelId == tempId) realId else labelId}"
 }
 
 class SyncEngine(
@@ -107,7 +111,7 @@ class SyncEngine(
         if (queuedAt == null) {
             null
         } else {
-            api.getAllTasks(mapOf("s" to task.title, "filter" to "project_id = ${task.projectId}"))
+            api.getAllTasks(mapOf("q" to task.title, "filter" to "project_id = ${task.projectId}"))
                 .firstOrNull { dto ->
                     val dt = DateUtils.parseIsoDate(dto.created)
                     dto.title == task.title &&
@@ -135,7 +139,10 @@ class SyncEngine(
                         done = true,
                         doneAt = task.doneAt.ifBlank { DateUtils.nowIso() },
                     )
-                    val doneDto = api.updateTask(responseEntity.id, with(taskMapper) { toggled.toDto() })
+                    val doneDto = api.updateTask(
+                        responseEntity.id,
+                        MergePatches.taskDone(done = true),
+                    )
                     finalEntity = with(taskMapper) { doneDto.toEntity() }
                     taskDao.upsert(finalEntity)
                 }
@@ -151,10 +158,12 @@ class SyncEngine(
                 }
             }
             "update", "toggle_done" -> {
-                val decoded = json.decodeFromString<Task>(action.payload)
-                val task = tempIdMap[decoded.id]?.let { decoded.copy(id = it) } ?: decoded
-                val dto = with(taskMapper) { task.toDto() }
-                val responseDto = api.updateTask(task.id, dto)
+                val taskId = tempIdMap[action.entityId] ?: action.entityId
+                val patch = json.decodeFromString(
+                    JsonObject.serializer(),
+                    normalizeQueuedPatchPayload("task", action.payload),
+                )
+                val responseDto = api.updateTask(taskId, patch)
                 val responseEntity = with(taskMapper) { responseDto.toEntity() }
                 taskDao.upsert(responseEntity)
                 val updated = with(taskMapper) { responseEntity.toDomain() }
@@ -174,16 +183,22 @@ class SyncEngine(
         when (action.actionType) {
             "create" -> {
                 val label = json.decodeFromString<Label>(action.payload)
-                val dto = with(labelMapper) { label.toDto() }
+                val dto = with(labelMapper) { label.toCreateDto() }
                 val responseDto = api.createLabel(dto)
                 val entity = with(labelMapper) { responseDto.toEntity() }
                 labelDao.deleteById(action.entityId)
                 labelDao.upsert(entity)
+                if (action.entityId != responseDto.id) {
+                    tempIdMap[action.entityId] = responseDto.id
+                    remapPendingDependents(action.entityId, responseDto.id)
+                }
             }
             "update" -> {
-                val label = json.decodeFromString<Label>(action.payload)
-                val dto = with(labelMapper) { label.toDto() }
-                val responseDto = api.updateLabel(label.id, dto)
+                val patch = json.decodeFromString(
+                    JsonObject.serializer(),
+                    normalizeQueuedPatchPayload("label", action.payload),
+                )
+                val responseDto = api.updateLabel(action.entityId, patch)
                 val entity = with(labelMapper) { responseDto.toEntity() }
                 labelDao.upsert(entity)
             }
@@ -193,13 +208,13 @@ class SyncEngine(
             "add_label" -> {
                 val parts = action.payload.split(":")
                 val taskId = parts[0].toLong().let { tempIdMap[it] ?: it }
-                val labelId = parts[1].toLong()
+                val labelId = parts[1].toLong().let { tempIdMap[it] ?: it }
                 api.addLabelToTask(taskId, LabelTaskDto(labelId = labelId))
             }
             "remove_label" -> {
                 val parts = action.payload.split(":")
                 val taskId = parts[0].toLong().let { tempIdMap[it] ?: it }
-                val labelId = parts[1].toLong()
+                val labelId = parts[1].toLong().let { tempIdMap[it] ?: it }
                 api.removeLabelFromTask(taskId, labelId)
             }
         }
@@ -210,11 +225,7 @@ class SyncEngine(
             when {
                 a.entityType == "task" && a.entityId == tempId &&
                     a.actionType in TASK_DEPENDENT_ACTIONS -> {
-                    val newPayload = runCatching {
-                        val t = json.decodeFromString<Task>(a.payload)
-                        json.encodeToString(Task.serializer(), t.copy(id = realId))
-                    }.getOrDefault(a.payload)
-                    pendingActionDao.remapEntity(a.id, realId, newPayload, "pending")
+                    pendingActionDao.remapEntity(a.id, realId, a.payload, "pending")
                 }
                 a.entityType == "label" && a.actionType in LABEL_TASK_ACTIONS -> {
                     remapLabelTaskPayload(a.payload, tempId, realId)?.let { newPayload ->
@@ -227,19 +238,7 @@ class SyncEngine(
 
     private suspend fun refreshAllFromServer() {
         try {
-            val allTasks = mutableListOf<com.rendyhd.vicu.data.remote.api.TaskDto>()
-            var page = 1
-            val maxPages = 100
-            while (page <= maxPages) {
-                val params = mapOf(
-                    "page" to page.toString(),
-                    "per_page" to Constants.DEFAULT_PAGE_SIZE.toString(),
-                )
-                val batch = api.getAllTasks(params)
-                allTasks.addAll(batch)
-                if (batch.size < Constants.DEFAULT_PAGE_SIZE) break
-                page++
-            }
+            val allTasks = api.getAllTasks()
             val taskEntities = allTasks.map { with(taskMapper) { it.toEntity() } }
             val pendingTaskIds = pendingActionDao.getTaskIdsWithPendingActions().toSet()
             val existingById = taskDao.getAllSync().associateBy { it.id }

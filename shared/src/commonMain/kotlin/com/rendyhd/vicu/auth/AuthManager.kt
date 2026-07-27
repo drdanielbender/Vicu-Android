@@ -154,7 +154,10 @@ class AuthManager(
                 return
             }
 
-            isServerV2Cached = tokenStorage.getServerIsV2()
+            // API v2 is the only supported protocol. Mark existing installations migrated
+            // so their stored pre-v2 compatibility flag cannot disable session refresh.
+            isServerV2Cached = true
+            tokenStorage.storeServerIsV2(true)
 
             val jwt = tokenStorage.getJwt()
             val jwtExpiry = tokenStorage.getJwtExpiry()
@@ -169,9 +172,7 @@ class AuthManager(
                     cachedToken = jwt
                     cachedJwtExpiry = jwtExpiry
                     _authState.value = AuthState.Authenticated
-                    if (isServerV2Cached) {
-                        scheduleProactiveRefresh()
-                    }
+                    scheduleProactiveRefresh()
                     ensureBackupApiToken()
                 }
                 apiToken != null -> {
@@ -183,20 +184,16 @@ class AuthManager(
                     Logger.d(TAG, "initialize: JWT expired, no API token — attempting V2 refresh")
                     cachedToken = jwt
                     cachedJwtExpiry = jwtExpiry
-                    val refreshed = if (isServerV2Cached) {
-                        withRefreshLock {
-                            if (cachedToken != null && !isExpired(cachedJwtExpiry)) {
-                                Logger.d(
-                                    "INITIALIZE_REFRESH_SKIPPED",
-                                    "another caller already refreshed (cached JWT valid)",
-                                )
-                                true
-                            } else {
-                                performV2Refresh()
-                            }
+                    val refreshed = withRefreshLock {
+                        if (cachedToken != null && !isExpired(cachedJwtExpiry)) {
+                            Logger.d(
+                                "INITIALIZE_REFRESH_SKIPPED",
+                                "another caller already refreshed (cached JWT valid)",
+                            )
+                            true
+                        } else {
+                            performV2Refresh()
                         }
-                    } else {
-                        false
                     }
                     if (refreshed) {
                         Logger.d(TAG, "initialize: V2 refresh succeeded → Authenticated")
@@ -269,7 +266,7 @@ class AuthManager(
         resetBackoff()
         _authState.value = AuthState.Authenticated
 
-        if (isServerV2Cached && refreshToken != null) {
+        if (refreshToken != null) {
             scheduleProactiveRefresh()
         }
     }
@@ -296,9 +293,7 @@ class AuthManager(
         cachedToken = newJwt
         cachedJwtExpiry = expiry
 
-        if (isServerV2Cached) {
-            scheduleProactiveRefresh()
-        }
+        scheduleProactiveRefresh()
     }
 
     suspend fun onInboxProjectSelected(projectId: Long) {
@@ -468,15 +463,7 @@ class AuthManager(
         appScope.launch {
             try {
                 val api = apiServiceProvider()
-                val allTokens = mutableListOf<com.rendyhd.vicu.data.remote.api.ApiTokenDto>()
-                val maxPages = 10
-                var page = 1
-                while (page <= maxPages) {
-                    val batch = api.listApiTokens(page = page, perPage = 100)
-                    if (batch.isEmpty()) break
-                    allTokens.addAll(batch)
-                    page++
-                }
+                val allTokens = api.listApiTokens()
                 val siblings = allTokens.filter { it.title == title && it.id != newTokenId }
                 for (sibling in siblings) {
                     try {

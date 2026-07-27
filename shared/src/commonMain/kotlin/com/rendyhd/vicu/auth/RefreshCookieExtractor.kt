@@ -6,7 +6,10 @@ object RefreshCookieExtractor {
     private const val COOKIE_NAME = "vikunja_refresh_token"
 
     fun extractRefreshToken(response: KtorResponse<*>): String? {
-        val cookies = response.headers["Set-Cookie"] ?: return null
+        val cookies = response.headers.entries
+            .firstOrNull { it.key.equals("Set-Cookie", ignoreCase = true) }
+            ?.value
+            ?: return null
         for (cookie in cookies) {
             if (cookie.startsWith("$COOKIE_NAME=")) {
                 val value = cookie.substringAfter("$COOKIE_NAME=").substringBefore(";")

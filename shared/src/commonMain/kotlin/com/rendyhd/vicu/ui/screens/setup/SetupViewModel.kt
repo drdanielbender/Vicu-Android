@@ -100,9 +100,12 @@ class SetupViewModel(
                 val normalized = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
                 baseUrlHolder.baseUrl = normalized
                 val info = apiService.getServerInfo()
-                // Detect Vikunja 2.0+ by parsing version string
-                val isV2 = parseIsV2(info.version)
-                authManager.storeServerIsV2(isV2)
+                if (!isSupportedVikunjaVersion(info.version)) {
+                    throw IllegalStateException(
+                        "Vikunja 2.4.0 or newer is required (server reports ${info.version.ifBlank { "an unknown version" }})",
+                    )
+                }
+                authManager.storeServerIsV2(true)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -278,13 +281,6 @@ class SetupViewModel(
         }
     }
 
-    private fun parseIsV2(version: String): Boolean {
-        // Version string may be like "v2.0.0", "2.1.0", "0.24.0", etc.
-        val cleaned = version.trimStart('v', 'V')
-        val major = cleaned.split(".").firstOrNull()?.toIntOrNull() ?: 0
-        return major >= 2
-    }
-
     private suspend fun createBackupApiToken() {
         // Delegate to AuthManager so the /routes-expansion logic lives in one place.
         // AuthManager logs both success and failure to AuthDebugLog; if creation fails here,
@@ -296,4 +292,16 @@ class SetupViewModel(
             Logger.w(TAG, "Backup API token creation failed during setup — AuthManager will retry on next launch")
         }
     }
+}
+
+internal fun isSupportedVikunjaVersion(version: String): Boolean {
+    val parts = version
+        .trim()
+        .trimStart('v', 'V')
+        .split('.')
+        .map { it.substringBefore('-').toIntOrNull() ?: 0 }
+    val major = parts.getOrElse(0) { 0 }
+    val minor = parts.getOrElse(1) { 0 }
+    val patch = parts.getOrElse(2) { 0 }
+    return major > 2 || (major == 2 && (minor > 4 || (minor == 4 && patch >= 0)))
 }

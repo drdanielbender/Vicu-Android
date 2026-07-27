@@ -10,6 +10,7 @@ import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
+import com.rendyhd.vicu.data.remote.api.MergePatches
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.notification.AlarmScheduler
 import com.rendyhd.vicu.util.DateUtils
@@ -43,6 +44,15 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
             val entity = taskDao.getByIdSync(taskId) ?: return
             val task = with(taskMapper) { entity.toDomain() }
             val toggled = task.copy(done = true, doneAt = DateUtils.nowIso())
+            val patch = MergePatches.taskDone(done = true)
+            val queuedPayload = if (taskId < 0L) {
+                json.encodeToString(Task.serializer(), toggled)
+            } else {
+                json.encodeToString(
+                    kotlinx.serialization.json.JsonObject.serializer(),
+                    patch,
+                )
+            }
 
             // 1. Optimistic local update (Room)
             val dto = with(taskMapper) { toggled.toDto() }
@@ -72,7 +82,7 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
                 entityType = "task",
                 entityId = taskId,
                 actionType = "toggle_done",
-                payload = json.encodeToString(Task.serializer(), toggled),
+                payload = queuedPayload,
                 createdAt = DateUtils.nowIso(),
                 updatedAt = DateUtils.nowIso(),
             )

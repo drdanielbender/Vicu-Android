@@ -16,7 +16,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.takeFrom
 import io.ktor.http.encodedPath
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 
 object KtorClientFactory {
@@ -27,7 +26,6 @@ object KtorClientFactory {
         json: Json,
         baseUrlHolder: BaseUrlHolder,
         authManager: AuthManager,
-        apiServiceProvider: () -> VikunjaApiService,
         enableLogging: Boolean = true
     ): HttpClient {
         val client = HttpClient(engine) {
@@ -42,11 +40,8 @@ object KtorClientFactory {
                             com.rendyhd.vicu.util.Logger.d("KtorClient", message)
                         }
                     }
-                    level = LogLevel.HEADERS
-                    // Redact sensitive headers
-                    filter { request ->
-                        request.headers.contains(HttpHeaders.Authorization) || request.headers.contains(HttpHeaders.Cookie)
-                    }
+                    // Method, URL, and status only. Never log auth/cookie headers or bodies.
+                    level = LogLevel.INFO
                 }
             }
         }
@@ -102,35 +97,12 @@ object KtorClientFactory {
                         return@withRefreshLock request
                     }
 
-                    // Try refresh based on server version
-                    if (authManager.isServerV2Cached) {
-                        val success = authManager.performV2Refresh()
-                        if (success) {
-                            val newToken = authManager.getBestTokenSync()
-                            if (newToken != null) {
-                                request.headers[HttpHeaders.Authorization] = "Bearer $newToken"
-                                return@withRefreshLock request
-                            }
-                        }
-                    } else {
-                        try {
-                            val renewResponse = apiServiceProvider().renewTokenLegacy()
-                            val newJwt = renewResponse.token
-                            if (newJwt.isNotBlank()) {
-                                authManager.onJwtRenewed(newJwt)
-                                request.headers[HttpHeaders.Authorization] = "Bearer $newJwt"
-                                return@withRefreshLock request
-                            }
-                        } catch (e: Exception) {
-                            val success = authManager.performV2Refresh()
-                            if (success) {
-                                authManager.storeServerIsV2(true)
-                                val newToken = authManager.getBestTokenSync()
-                                if (newToken != null) {
-                                    request.headers[HttpHeaders.Authorization] = "Bearer $newToken"
-                                    return@withRefreshLock request
-                                }
-                            }
+                    val success = authManager.performV2Refresh()
+                    if (success) {
+                        val newToken = authManager.getBestTokenSync()
+                        if (newToken != null) {
+                            request.headers[HttpHeaders.Authorization] = "Bearer $newToken"
+                            return@withRefreshLock request
                         }
                     }
 

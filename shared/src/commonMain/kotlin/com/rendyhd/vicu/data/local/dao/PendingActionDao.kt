@@ -79,9 +79,29 @@ interface PendingActionDao {
     suspend fun queueTaskActionMerging(action: PendingActionEntity) {
         val existing = getActiveByEntity(action.entityType, action.entityId)
         when (val op = resolveTaskQueueMerge(existing, action.actionType, action.payload)) {
-            QueueMergeOp.ReplaceForEntity -> replaceForEntity(action.entityType, action.entityId, action)
+            QueueMergeOp.ReplaceForEntity -> {
+                val mergedPayload = if (action.actionType == "update" || action.actionType == "toggle_done") {
+                    existing
+                        .filter { it.actionType == "update" || it.actionType == "toggle_done" }
+                        .fold(action.payload) { combined, old ->
+                            mergePatchPayloads(old.payload, combined, action.entityType)
+                        }
+                } else {
+                    action.payload
+                }
+                replaceForEntity(
+                    action.entityType,
+                    action.entityId,
+                    action.copy(payload = mergedPayload),
+                )
+            }
             is QueueMergeOp.UpdateCreatePayload -> remapEntity(op.createActionId, action.entityId, op.newPayload, "pending")
             QueueMergeOp.DropAll -> deleteByEntity(action.entityType, action.entityId)
         }
+    }
+
+    @Transaction
+    suspend fun queuePatchActionMerging(action: PendingActionEntity) {
+        queueTaskActionMerging(action)
     }
 }

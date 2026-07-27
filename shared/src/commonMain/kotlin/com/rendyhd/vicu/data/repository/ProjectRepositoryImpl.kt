@@ -3,6 +3,7 @@ package com.rendyhd.vicu.data.repository
 import com.rendyhd.vicu.data.local.dao.ProjectDao
 import com.rendyhd.vicu.data.mapper.ProjectMapper
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
+import com.rendyhd.vicu.data.remote.api.MergePatches
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.domain.repository.ProjectRepository
 import com.rendyhd.vicu.util.NetworkResult
@@ -45,9 +46,11 @@ class ProjectRepositoryImpl(
     override suspend fun update(project: Project): NetworkResult<Project> {
         val previous = projectDao.getByIdSync(project.id)
         with(projectMapper) { projectDao.upsert(project.toEntity()) }
+        val previousProject = previous?.let { with(projectMapper) { it.toDomain() } }
+        val patch = MergePatches.project(previousProject, project)
+        if (patch.isEmpty()) return NetworkResult.Success(project)
         return try {
-            val dto = with(projectMapper) { project.toUpdateDto() }
-            val responseDto = api.updateProject(project.id, dto)
+            val responseDto = api.updateProject(project.id, patch)
             val responseEntity = with(projectMapper) { responseDto.toEntity() }
             projectDao.upsert(responseEntity)
             NetworkResult.Success(with(projectMapper) { responseEntity.toDomain() })

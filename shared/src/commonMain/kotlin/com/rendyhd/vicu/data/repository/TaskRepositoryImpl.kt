@@ -7,11 +7,11 @@ import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.data.remote.api.TaskPositionDto
+import com.rendyhd.vicu.data.remote.api.MergePatches
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.repository.TaskRepository
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
-import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.NetworkResult
 import com.rendyhd.vicu.util.isRetriableNetworkError
@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.datetime.Clock
 import com.rendyhd.vicu.util.AtomicLong
 
@@ -52,11 +53,11 @@ class TaskRepositoryImpl(
         try {
             val views = api.getProjectViews(projectId)
             val listView = views.firstOrNull { it.viewKind == "list" } ?: return
-            val existing = api.getViewTasks(
+            val existing = api.getViewTasksPage(
                 projectId,
                 listView.id,
                 mapOf("sort_by" to "position", "order_by" to "desc", "per_page" to "1"),
-            )
+            ).items
             val maxPos = existing.firstOrNull()?.position ?: 0.0
             api.updateTaskPosition(
                 newTaskId,
@@ -97,6 +98,13 @@ class TaskRepositoryImpl(
         }
         platformHooks.triggerSync()
     }
+
+    private fun queuedUpdatePayload(task: Task, patch: JsonObject): String =
+        if (task.id < 0L) {
+            json.encodeToString(Task.serializer(), task)
+        } else {
+            json.encodeToString(JsonObject.serializer(), patch)
+        }
 
     override fun getInboxTasks(inboxProjectId: Long): Flow<List<Task>> =
         behaviorPrefsStore.getPrefs()
@@ -204,12 +212,25 @@ class TaskRepositoryImpl(
 
     override suspend fun update(task: Task): NetworkResult<Task> {
         val previous = taskDao.getByIdSync(task.id)
-        return try {
-            val dto = with(taskMapper) { task.toDto() }
-            val optimisticEntity = with(taskMapper) { dto.toEntity() }
-            taskDao.upsert(optimisticEntity)
+        val previousTask = previous?.let { with(taskMapper) { it.toDomain() } }
+        val patch = MergePatches.task(previousTask, task)
+        val dto = with(taskMapper) { task.toDto() }
+        val optimisticEntity = with(taskMapper) { dto.toEntity() }
+        taskDao.upsert(optimisticEntity)
 
-            val responseDto = api.updateTask(task.id, dto)
+        if (task.id < 0L) {
+            queueTaskAction(
+                task.id,
+                "update",
+                queuedUpdatePayload(task, patch),
+            )
+            platformHooks.updateWidgets()
+            return NetworkResult.Success(task)
+        }
+        if (patch.isEmpty()) return NetworkResult.Success(task)
+
+        return try {
+            val responseDto = api.updateTask(task.id, patch)
             val responseEntity = with(taskMapper) { responseDto.toEntity() }
             taskDao.upsert(responseEntity)
 
@@ -219,7 +240,7 @@ class TaskRepositoryImpl(
             NetworkResult.Success(updated)
         } catch (e: Exception) {
             if (isRetriableNetworkError(e)) {
-                queueTaskAction(task.id, "update", json.encodeToString(Task.serializer(), task))
+                queueTaskAction(task.id, "update", queuedUpdatePayload(task, patch))
                 platformHooks.updateWidgets()
                 NetworkResult.Success(task)
             } else {
@@ -254,6 +275,13 @@ class TaskRepositoryImpl(
     }
 
     override suspend fun delete(taskId: Long): NetworkResult<Unit> {
+        if (taskId < 0L) {
+            platformHooks.cancelAlarm(taskId)
+            taskDao.deleteById(taskId)
+            queueTaskAction(taskId, "delete", "")
+            platformHooks.updateWidgets()
+            return NetworkResult.Success(Unit)
+        }
         return try {
             platformHooks.cancelAlarm(taskId)
             taskDao.deleteById(taskId)
@@ -314,8 +342,19 @@ class TaskRepositoryImpl(
             taskDao.upsert(it.copy(done = toggled.done, doneAt = DateUtils.normalizeToUtc(toggled.doneAt)))
         }
 
+        val patch = MergePatches.taskDone(toggled.done)
+        if (subtask.id < 0L) {
+            queueTaskAction(
+                subtask.id,
+                "toggle_done",
+                queuedUpdatePayload(toggled, patch),
+            )
+            if (toggled.done) platformHooks.cancelAlarm(subtask.id)
+            platformHooks.updateWidgets()
+            return NetworkResult.Success(toggled)
+        }
         return try {
-            val responseDto = api.updateTask(subtask.id, with(taskMapper) { toggled.toDto() })
+            val responseDto = api.updateTask(subtask.id, patch)
             val responseEntity = with(taskMapper) { responseDto.toEntity() }
             taskDao.upsert(responseEntity)
             taskDao.getByIdSync(parentTaskId)?.let { parent ->
@@ -327,7 +366,11 @@ class TaskRepositoryImpl(
             NetworkResult.Success(result)
         } catch (e: Exception) {
             if (isRetriableNetworkError(e)) {
-                queueTaskAction(subtask.id, "toggle_done", json.encodeToString(Task.serializer(), toggled))
+                queueTaskAction(
+                    subtask.id,
+                    "toggle_done",
+                    queuedUpdatePayload(toggled, patch),
+                )
                 if (toggled.done) platformHooks.cancelAlarm(subtask.id)
                 platformHooks.updateWidgets()
                 NetworkResult.Success(toggled)
@@ -401,9 +444,21 @@ class TaskRepositoryImpl(
         if (toggled.done) {
             platformHooks.playCompletionSound()
         }
-        return try {
+        val patch = MergePatches.taskDone(toggled.done)
+        if (task.id < 0L) {
             val dto = with(taskMapper) { toggled.toDto() }
-            val responseDto = api.updateTask(task.id, dto)
+            taskDao.upsert(with(taskMapper) { dto.toEntity() })
+            queueTaskAction(
+                task.id,
+                "toggle_done",
+                queuedUpdatePayload(toggled, patch),
+            )
+            if (toggled.done) platformHooks.cancelAlarm(task.id)
+            platformHooks.updateWidgets()
+            return NetworkResult.Success(toggled)
+        }
+        return try {
+            val responseDto = api.updateTask(task.id, patch)
             val responseEntity = with(taskMapper) { responseDto.toEntity() }
             val result = with(taskMapper) { responseEntity.toDomain() }
             if (toggled.done) {
@@ -418,7 +473,11 @@ class TaskRepositoryImpl(
                 val dto = with(taskMapper) { toggled.toDto() }
                 val entity = with(taskMapper) { dto.toEntity() }
                 taskDao.upsert(entity)
-                queueTaskAction(task.id, "toggle_done", json.encodeToString(Task.serializer(), toggled))
+                queueTaskAction(
+                    task.id,
+                    "toggle_done",
+                    queuedUpdatePayload(toggled, patch),
+                )
                 if (toggled.done) {
                     platformHooks.cancelAlarm(task.id)
                 }
@@ -437,22 +496,7 @@ class TaskRepositoryImpl(
     override suspend fun refreshAll(filters: Map<String, String>): NetworkResult<Unit> {
         Logger.d(TAG, "refreshAll() called with filters=$filters")
         return try {
-            val allTasks = mutableListOf<com.rendyhd.vicu.data.remote.api.TaskDto>()
-            var page = 1
-            val maxPages = 100
-            while (page <= maxPages) {
-                val params = buildMap {
-                    putAll(filters)
-                    put("page", page.toString())
-                    put("per_page", Constants.DEFAULT_PAGE_SIZE.toString())
-                }
-                Logger.d(TAG, "refreshAll() fetching page=$page params=$params")
-                val batch = api.getAllTasks(params)
-                Logger.d(TAG, "refreshAll() page=$page returned ${batch.size} tasks")
-                allTasks.addAll(batch)
-                if (batch.size < Constants.DEFAULT_PAGE_SIZE) break
-                page++
-            }
+            val allTasks = api.getAllTasks(filters)
             val entities = allTasks.map { with(taskMapper) { it.toEntity() } }
             val pendingTaskIds = pendingActionDao.getTaskIdsWithPendingActions().toSet()
             val existingById = taskDao.getAllSync().associateBy { it.id }

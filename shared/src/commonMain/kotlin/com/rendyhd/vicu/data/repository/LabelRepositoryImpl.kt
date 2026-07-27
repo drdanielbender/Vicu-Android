@@ -7,6 +7,7 @@ import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.LabelMapper
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.data.remote.api.LabelTaskDto
+import com.rendyhd.vicu.data.remote.api.MergePatches
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.repository.LabelRepository
@@ -45,7 +46,7 @@ class LabelRepositoryImpl(
         if (actionType == "create" || actionType == "add_label" || actionType == "remove_label") {
             pendingActionDao.insert(action)
         } else {
-            pendingActionDao.replaceForEntity("label", entityId, action)
+            pendingActionDao.queuePatchActionMerging(action)
         }
         platformHooks.triggerSync()
     }
@@ -72,7 +73,7 @@ class LabelRepositoryImpl(
 
     override suspend fun create(label: Label): NetworkResult<Label> {
         return try {
-            val dto = with(labelMapper) { label.toDto() }
+            val dto = with(labelMapper) { label.toCreateDto() }
             val responseDto = api.createLabel(dto)
             val entity = with(labelMapper) { responseDto.toEntity() }
             labelDao.upsert(entity)
@@ -96,9 +97,25 @@ class LabelRepositoryImpl(
     }
 
     override suspend fun update(label: Label): NetworkResult<Label> {
+        val previousEntity = labelDao.getById(label.id)
+        val previous = previousEntity?.let { with(labelMapper) { it.toDomain() } }
+        val patch = MergePatches.label(previous, label)
+        val patchPayload = json.encodeToString(
+            kotlinx.serialization.json.JsonObject.serializer(),
+            patch,
+        )
+        if (label.id < 0L) {
+            labelDao.upsert(with(labelMapper) { label.toEntity() })
+            queueLabelAction(
+                label.id,
+                "update",
+                json.encodeToString(Label.serializer(), label),
+            )
+            return NetworkResult.Success(label)
+        }
+        if (patch.isEmpty()) return NetworkResult.Success(label)
         return try {
-            val dto = with(labelMapper) { label.toDto() }
-            val responseDto = api.updateLabel(label.id, dto)
+            val responseDto = api.updateLabel(label.id, patch)
             val entity = with(labelMapper) { responseDto.toEntity() }
             labelDao.upsert(entity)
             NetworkResult.Success(with(labelMapper) { entity.toDomain() })
@@ -106,7 +123,7 @@ class LabelRepositoryImpl(
             if (isRetriableNetworkError(e)) {
                 val entity = with(labelMapper) { label.toEntity() }
                 labelDao.upsert(entity)
-                queueLabelAction(label.id, "update", json.encodeToString(Label.serializer(), label))
+                queueLabelAction(label.id, "update", patchPayload)
                 NetworkResult.Success(label)
             } else {
                 NetworkResult.Error(e.message ?: "Failed to update label")
@@ -115,6 +132,11 @@ class LabelRepositoryImpl(
     }
 
     override suspend fun delete(labelId: Long): NetworkResult<Unit> {
+        if (labelId < 0L) {
+            labelDao.deleteById(labelId)
+            queueLabelAction(labelId, "delete", "")
+            return NetworkResult.Success(Unit)
+        }
         return try {
             labelDao.deleteById(labelId)
             api.deleteLabel(labelId)

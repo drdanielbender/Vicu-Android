@@ -21,7 +21,8 @@ class PasswordLoginHandler(
                 totpPasscode = totpPasscode ?: "",
             )
             val response = apiServiceProvider().login(request)
-            val code = response.code()
+            val status = response.code()
+            val problemCode = response.problem?.code
             when {
                 response.isSuccessful -> {
                     val body = response.body()
@@ -33,12 +34,22 @@ class PasswordLoginHandler(
                         PasswordLoginResult.Success(token, refreshToken)
                     }
                 }
-                code == 412 -> PasswordLoginResult.NeedsTOTP
-                code == 403 -> PasswordLoginResult.Error("Invalid username or password")
-                else -> PasswordLoginResult.Error("Login failed: HTTP $code")
+                problemCode == ERROR_INVALID_TOTP && totpPasscode.isNullOrBlank() ->
+                    PasswordLoginResult.NeedsTOTP
+                problemCode == ERROR_INVALID_CREDENTIALS ->
+                    PasswordLoginResult.Error(response.problem?.detail ?: "Invalid username or password")
+                else ->
+                    PasswordLoginResult.Error(
+                        response.problem?.detail ?: "Login failed: HTTP $status",
+                    )
             }
         } catch (e: Exception) {
             PasswordLoginResult.Error("Connection error: ${e.message}")
         }
+    }
+
+    private companion object {
+        const val ERROR_INVALID_CREDENTIALS = 1011L
+        const val ERROR_INVALID_TOTP = 1017L
     }
 }

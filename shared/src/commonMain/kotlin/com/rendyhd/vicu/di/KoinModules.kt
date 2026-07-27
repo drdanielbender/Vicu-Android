@@ -56,10 +56,9 @@ val networkModule = module {
             json = get(),
             baseUrlHolder = get(),
             authManager = get(),
-            apiServiceProvider = { get() }
         )
     }
-    single { VikunjaApiService(get()) }
+    single { VikunjaApiService(get(), get()) }
 }
 
 val repositoryModule = module {

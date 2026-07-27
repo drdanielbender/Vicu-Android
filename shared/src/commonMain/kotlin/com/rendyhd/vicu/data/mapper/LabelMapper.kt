@@ -1,6 +1,7 @@
 package com.rendyhd.vicu.data.mapper
 
 import com.rendyhd.vicu.data.local.entity.LabelEntity
+import com.rendyhd.vicu.data.remote.api.CreateLabelDto
 import com.rendyhd.vicu.data.remote.api.LabelDto
 import com.rendyhd.vicu.domain.model.Label
 
@@ -38,6 +39,12 @@ class LabelMapper {
 
     fun Label.toDto(): LabelDto = LabelDto(
         id = id,
+        title = title,
+        description = description,
+        hexColor = hexColor.removePrefix("#"),
+    )
+
+    fun Label.toCreateDto(): CreateLabelDto = CreateLabelDto(
         title = title,
         description = description,
         hexColor = hexColor.removePrefix("#"),

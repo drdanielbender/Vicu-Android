@@ -2,262 +2,339 @@ package com.rendyhd.vicu.data.remote.api
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.request.*
+import io.ktor.client.request.delete
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.parameter
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 data class KtorResponse<T>(
     val code: Int,
     val isSuccessful: Boolean,
     val body: T?,
-    val headers: Map<String, List<String>>
+    val headers: Map<String, List<String>>,
+    val problem: VikunjaProblemDto? = null,
 ) {
     fun code(): Int = code
     fun body(): T? = body
 }
 
-class VikunjaApiService(private val client: HttpClient) {
-
-    // Tasks
-    suspend fun getAllTasks(filters: Map<String, String> = emptyMap()): List<TaskDto> {
-        return client.get("tasks") {
-            filters.forEach { (k, v) -> parameter(k, v) }
-        }.body()
+class VikunjaApiService(
+    private val client: HttpClient,
+    private val json: Json,
+) {
+    companion object {
+        private const val DEFAULT_PAGE_SIZE = 100
+        private val MERGE_PATCH = ContentType.parse("application/merge-patch+json")
     }
 
-    suspend fun getTask(id: Long): TaskDto {
-        return client.get("tasks/$id").body()
-    }
+    suspend fun getTasksPage(filters: Map<String, String> = emptyMap()): PaginatedResponse<TaskDto> =
+        client.get("tasks") {
+            filters.forEach { (key, value) -> parameter(key, value) }
+        }.bodyOrThrow()
 
-    suspend fun createTask(projectId: Long, task: CreateTaskDto): TaskDto {
-        return client.put("projects/$projectId/tasks") {
+    suspend fun getAllTasks(filters: Map<String, String> = emptyMap()): List<TaskDto> =
+        fetchAllPages(filters, ::getTasksPage)
+
+    suspend fun getTask(id: Long): TaskDto =
+        client.get("tasks/$id").bodyOrThrow()
+
+    suspend fun createTask(projectId: Long, task: CreateTaskDto): TaskDto =
+        client.post("projects/$projectId/tasks") {
             contentType(ContentType.Application.Json)
             setBody(task)
-        }.body()
-    }
+        }.bodyOrThrow(HttpStatusCode.Created)
 
-    suspend fun updateTask(id: Long, task: TaskDto): TaskDto {
-        return client.post("tasks/$id") {
-            contentType(ContentType.Application.Json)
-            setBody(task)
-        }.body()
-    }
+    suspend fun updateTask(id: Long, patch: JsonObject): TaskDto =
+        client.patch("tasks/$id") {
+            contentType(MERGE_PATCH)
+            setBody(patch)
+        }.bodyOrThrow()
 
     suspend fun deleteTask(id: Long) {
-        client.delete("tasks/$id")
+        client.delete("tasks/$id").requireNoContent()
     }
 
-    // Projects
-    suspend fun getAllProjects(): List<ProjectDto> {
-        return client.get("projects").body()
-    }
+    suspend fun getAllProjects(): List<ProjectDto> =
+        fetchAllPages { params ->
+            client.get("projects") {
+                params.forEach { (key, value) -> parameter(key, value) }
+            }.bodyOrThrow()
+        }
 
-    suspend fun getProject(id: Long): ProjectDto {
-        return client.get("projects/$id").body()
-    }
+    suspend fun getProject(id: Long): ProjectDto =
+        client.get("projects/$id").bodyOrThrow()
 
-    suspend fun createProject(project: CreateProjectDto): ProjectDto {
-        return client.put("projects") {
+    suspend fun createProject(project: CreateProjectDto): ProjectDto =
+        client.post("projects") {
             contentType(ContentType.Application.Json)
             setBody(project)
-        }.body()
-    }
+        }.bodyOrThrow(HttpStatusCode.Created)
 
-    suspend fun updateProject(id: Long, project: UpdateProjectDto): ProjectDto {
-        return client.post("projects/$id") {
-            contentType(ContentType.Application.Json)
-            setBody(project)
-        }.body()
-    }
+    suspend fun updateProject(id: Long, patch: JsonObject): ProjectDto =
+        client.patch("projects/$id") {
+            contentType(MERGE_PATCH)
+            setBody(patch)
+        }.bodyOrThrow()
 
     suspend fun deleteProject(id: Long) {
-        client.delete("projects/$id")
+        client.delete("projects/$id").requireNoContent()
     }
 
-    // Labels
-    suspend fun getAllLabels(): List<LabelDto> {
-        return client.get("labels").body()
-    }
+    suspend fun getAllLabels(): List<LabelDto> =
+        fetchAllPages { params ->
+            client.get("labels") {
+                params.forEach { (key, value) -> parameter(key, value) }
+            }.bodyOrThrow()
+        }
 
-    suspend fun getLabel(id: Long): LabelDto {
-        return client.get("labels/$id").body()
-    }
+    suspend fun getLabel(id: Long): LabelDto =
+        client.get("labels/$id").bodyOrThrow()
 
-    suspend fun createLabel(label: LabelDto): LabelDto {
-        return client.put("labels") {
+    suspend fun createLabel(label: CreateLabelDto): LabelDto =
+        client.post("labels") {
             contentType(ContentType.Application.Json)
             setBody(label)
-        }.body()
-    }
+        }.bodyOrThrow(HttpStatusCode.Created)
 
-    suspend fun updateLabel(id: Long, label: LabelDto): LabelDto {
-        return client.post("labels/$id") {
-            contentType(ContentType.Application.Json)
-            setBody(label)
-        }.body()
-    }
+    suspend fun updateLabel(id: Long, patch: JsonObject): LabelDto =
+        client.patch("labels/$id") {
+            contentType(MERGE_PATCH)
+            setBody(patch)
+        }.bodyOrThrow()
 
     suspend fun deleteLabel(id: Long) {
-        client.delete("labels/$id")
+        client.delete("labels/$id").requireNoContent()
     }
 
-    // Task Labels
+    suspend fun getTaskLabels(taskId: Long): List<LabelDto> =
+        fetchAllPages { params ->
+            client.get("tasks/$taskId/labels") {
+                params.forEach { (key, value) -> parameter(key, value) }
+            }.bodyOrThrow()
+        }
+
     suspend fun addLabelToTask(taskId: Long, body: LabelTaskDto) {
-        client.put("tasks/$taskId/labels") {
+        client.post("tasks/$taskId/labels") {
             contentType(ContentType.Application.Json)
             setBody(body)
-        }
+        }.requireStatus(HttpStatusCode.Created)
     }
 
     suspend fun removeLabelFromTask(taskId: Long, labelId: Long) {
-        client.delete("tasks/$taskId/labels/$labelId")
+        client.delete("tasks/$taskId/labels/$labelId").requireNoContent()
     }
 
-    // Attachments
-    suspend fun getAttachments(taskId: Long): List<AttachmentDto> {
-        return client.get("tasks/$taskId/attachments").body()
+    suspend fun getAttachments(taskId: Long): List<AttachmentDto> =
+        fetchAllPages { params ->
+            client.get("tasks/$taskId/attachments") {
+                params.forEach { (key, value) -> parameter(key, value) }
+            }.bodyOrThrow()
+        }
+
+    suspend fun uploadAttachment(taskId: Long, fileName: String, content: ByteArray) {
+        client.post("tasks/$taskId/attachments") {
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append(
+                            "files",
+                            content,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, "application/octet-stream")
+                                append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
+                            },
+                        )
+                    },
+                ),
+            )
+        }.requireStatus(HttpStatusCode.Created)
     }
 
-    suspend fun uploadAttachment(taskId: Long, fileName: String, content: ByteArray): AttachmentDto {
-        return client.put("tasks/$taskId/attachments") {
-            setBody(MultiPartFormDataContent(
-                formData {
-                    append("files", content, Headers.build {
-                        append(HttpHeaders.ContentType, "application/octet-stream")
-                        append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"")
-                    })
-                }
-            ))
-        }.body()
+    suspend fun downloadAttachment(taskId: Long, attachmentId: Long): ByteArray =
+        client.get("tasks/$taskId/attachments/$attachmentId").bodyOrThrow()
+
+    suspend fun deleteAttachment(taskId: Long, attachmentId: Long) {
+        client.delete("tasks/$taskId/attachments/$attachmentId").requireNoContent()
     }
 
-    suspend fun downloadAttachment(taskId: Long, attId: Long): ByteArray {
-        return client.get("tasks/$taskId/attachments/$attId").body()
-    }
-
-    suspend fun deleteAttachment(taskId: Long, attId: Long) {
-        client.delete("tasks/$taskId/attachments/$attId")
-    }
-
-    // Relations
     suspend fun createRelation(taskId: Long, body: CreateRelationDto) {
-        client.put("tasks/$taskId/relations") {
+        client.post("tasks/$taskId/relations") {
             contentType(ContentType.Application.Json)
             setBody(body)
-        }
+        }.requireStatus(HttpStatusCode.Created)
     }
 
     suspend fun deleteRelation(taskId: Long, relationKind: String, otherTaskId: Long) {
-        client.delete("tasks/$taskId/relations/$relationKind/$otherTaskId")
+        client.delete("tasks/$taskId/relations/$relationKind/$otherTaskId").requireNoContent()
     }
 
-    // Views
-    suspend fun getProjectViews(projectId: Long): List<ProjectViewDto> {
-        return client.get("projects/$projectId/views").body()
-    }
+    suspend fun getProjectViews(projectId: Long): List<ProjectViewDto> =
+        fetchAllPages { params ->
+            client.get("projects/$projectId/views") {
+                params.forEach { (key, value) -> parameter(key, value) }
+            }.bodyOrThrow()
+        }
 
-    suspend fun getViewTasks(projectId: Long, viewId: Long, filters: Map<String, String> = emptyMap()): List<TaskDto> {
-        return client.get("projects/$projectId/views/$viewId/tasks") {
-            filters.forEach { (k, v) -> parameter(k, v) }
-        }.body()
-    }
+    suspend fun getViewTasksPage(
+        projectId: Long,
+        viewId: Long,
+        filters: Map<String, String> = emptyMap(),
+    ): PaginatedResponse<TaskDto> =
+        client.get("projects/$projectId/views/$viewId/tasks") {
+            filters.forEach { (key, value) -> parameter(key, value) }
+        }.bodyOrThrow()
 
-    // Position
+    suspend fun getAllViewTasks(
+        projectId: Long,
+        viewId: Long,
+        filters: Map<String, String> = emptyMap(),
+    ): List<TaskDto> =
+        fetchAllPages(filters) { params -> getViewTasksPage(projectId, viewId, params) }
+
     suspend fun updateTaskPosition(taskId: Long, body: TaskPositionDto) {
-        client.post("tasks/$taskId/position") {
+        client.put("tasks/$taskId/position") {
             contentType(ContentType.Application.Json)
             setBody(body)
+        }.requireStatus(HttpStatusCode.OK)
+    }
+
+    suspend fun login(body: LoginRequestDto): KtorResponse<TokenResponseDto> =
+        client.post("login") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.toKtorResponse()
+
+    suspend fun getServerInfo(): ServerInfoDto =
+        client.get("info").bodyOrThrow()
+
+    suspend fun getCurrentUser(): UserDto =
+        client.get("user").bodyOrThrow()
+
+    suspend fun exchangeOidcToken(
+        providerKey: String,
+        body: OidcCallbackDto,
+    ): KtorResponse<TokenResponseDto> =
+        client.post("auth/openid/$providerKey/callback") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.toKtorResponse()
+
+    suspend fun createApiToken(body: ApiTokenRequestDto): ApiTokenResponseDto =
+        client.post("tokens") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.bodyOrThrow(HttpStatusCode.Created)
+
+    suspend fun listApiTokens(query: String? = null): List<ApiTokenDto> =
+        fetchAllPages(
+            buildMap {
+                if (!query.isNullOrBlank()) put("q", query)
+            },
+        ) { params ->
+            client.get("tokens") {
+                params.forEach { (key, value) -> parameter(key, value) }
+            }.bodyOrThrow()
         }
-    }
-
-    // Auth
-    suspend fun login(body: LoginRequestDto): KtorResponse<TokenResponseDto> {
-        val response = client.post("login") {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }
-        return response.toKtorResponse()
-    }
-
-    suspend fun getServerInfo(): ServerInfoDto {
-        return client.get("info").body()
-    }
-
-    suspend fun getCurrentUser(): UserDto {
-        return client.get("user").body()
-    }
-
-    suspend fun getOidcProviders(): List<OidcProviderDto> {
-        return client.get("auth/openid/callback").body()
-    }
-
-    suspend fun exchangeOidcToken(providerKey: String, body: OidcCallbackDto): KtorResponse<TokenResponseDto> {
-        val response = client.post("auth/openid/$providerKey/callback") {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }
-        return response.toKtorResponse()
-    }
-
-    suspend fun createApiToken(body: ApiTokenRequestDto): ApiTokenResponseDto {
-        return client.put("tokens") {
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }.body()
-    }
-
-    suspend fun listApiTokens(page: Int = 1, perPage: Int = 100): List<ApiTokenDto> {
-        return client.get("tokens") {
-            parameter("page", page)
-            parameter("per_page", perPage)
-        }.body()
-    }
 
     suspend fun deleteApiToken(id: Long) {
-        client.delete("tokens/$id")
+        client.delete("tokens/$id").requireNoContent()
     }
 
-    suspend fun getApiTokenRoutes(): Map<String, Map<String, RouteDetailDto>> {
-        return client.get("routes").body()
-    }
+    suspend fun getApiTokenRoutes(): Map<String, Map<String, RouteDetailDto>> =
+        client.get("routes").bodyOrThrow()
 
-    suspend fun renewTokenLegacy(): TokenResponseDto {
-        return client.post("user/token").body()
-    }
-
-    suspend fun refreshToken(cookie: String): KtorResponse<TokenResponseDto> {
-        val response = client.post("user/token/refresh") {
+    suspend fun refreshToken(cookie: String): KtorResponse<TokenResponseDto> =
+        client.post("user/token/refresh") {
             header(HttpHeaders.Cookie, cookie)
-        }
-        return response.toKtorResponse()
-    }
+        }.toKtorResponse()
 
     suspend fun serverLogout() {
-        client.post("user/logout")
+        client.post("logout").requireStatus(HttpStatusCode.OK)
+    }
+
+    private suspend fun <T> fetchAllPages(
+        filters: Map<String, String> = emptyMap(),
+        fetchPage: suspend (Map<String, String>) -> PaginatedResponse<T>,
+    ): List<T> {
+        val base = filters
+            .filterKeys { it != "page" }
+            .toMutableMap()
+            .apply { putIfAbsent("per_page", DEFAULT_PAGE_SIZE.toString()) }
+        val all = mutableListOf<T>()
+        var page = 1
+        var totalPages = 1
+        do {
+            val response = fetchPage(base + ("page" to page.toString()))
+            all += response.items
+            totalPages = maxOf(totalPages, response.totalPages.coerceAtLeast(1))
+            page++
+        } while (page <= totalPages)
+        return all
+    }
+
+    private suspend inline fun <reified T> HttpResponse.bodyOrThrow(
+        expectedStatus: HttpStatusCode? = null,
+    ): T {
+        ensureSuccess(expectedStatus)
+        return body()
+    }
+
+    private suspend fun HttpResponse.requireNoContent() {
+        ensureSuccess(HttpStatusCode.NoContent)
+    }
+
+    private suspend fun HttpResponse.requireStatus(expectedStatus: HttpStatusCode) {
+        ensureSuccess(expectedStatus)
+        bodyAsText()
+    }
+
+    private suspend fun HttpResponse.ensureSuccess(expectedStatus: HttpStatusCode? = null) {
+        val statusMatches = expectedStatus?.let { status == it } ?: (status.value in 200..299)
+        if (!statusMatches) throw toApiException()
+    }
+
+    private suspend fun HttpResponse.toApiException(): VikunjaApiException {
+        val raw = runCatching { bodyAsText() }.getOrDefault("")
+        val problem = runCatching {
+            json.decodeFromString<VikunjaProblemDto>(raw)
+        }.getOrNull()
+        return VikunjaApiException(status.value, problem)
     }
 
     private suspend inline fun <reified T> HttpResponse.toKtorResponse(): KtorResponse<T> {
         val success = status.value in 200..299
-        val bodyObj = if (success || status.value == 412) {
-            try {
-                body<T>()
-            } catch (_: Exception) {
-                null
-            }
+        val bodyObject = if (success) {
+            runCatching { body<T>() }.getOrNull()
         } else {
             null
         }
-        val headerMap = headers.entries().associate { it.key to it.value }
+        val problem = if (success) {
+            null
+        } else {
+            val raw = runCatching { bodyAsText() }.getOrDefault("")
+            runCatching { json.decodeFromString<VikunjaProblemDto>(raw) }.getOrNull()
+        }
         return KtorResponse(
             code = status.value,
             isSuccessful = success,
-            body = bodyObj,
-            headers = headerMap
+            body = bodyObject,
+            headers = headers.entries().associate { it.key to it.value },
+            problem = problem,
         )
     }
 }

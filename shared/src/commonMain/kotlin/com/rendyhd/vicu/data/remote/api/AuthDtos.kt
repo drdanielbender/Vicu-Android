@@ -76,9 +76,8 @@ data class CreateRelationDto(
 data class ApiTokenRequestDto(
     val title: String = "Vicu Android",
     @SerialName("expires_at") val expiresAt: String = "2099-12-31T23:59:59Z",
-    // Vikunja's APIToken model tags `permissions` as valid:"required". The server rejects
-    // creation with HTTP 400 if this is missing or empty. For "full access" we mirror the
-    // Vikunja frontend: fetch /api/v1/routes and expand `{"*": "*"}` to a concrete map.
+    // The server rejects creation if permissions are missing or empty. For "full access"
+    // we mirror the Vikunja frontend: fetch /api/v2/routes and expand the route map.
     val permissions: Map<String, List<String>> = emptyMap(),
 )
 

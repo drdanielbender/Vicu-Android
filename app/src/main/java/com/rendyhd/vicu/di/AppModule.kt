@@ -87,6 +87,7 @@ val appModule = module {
                     level = HttpLoggingInterceptor.Level.HEADERS
                     redactHeader("Authorization")
                     redactHeader("Cookie")
+                    redactHeader("Set-Cookie")
                 }
             )
         }

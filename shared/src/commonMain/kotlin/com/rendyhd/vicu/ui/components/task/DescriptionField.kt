@@ -204,7 +204,7 @@ private fun ImageThumb(
     onRemove: () -> Unit,
 ) {
     Box {
-        // BaseUrlInterceptor rewrites localhost → real server + `/api/v1/` prefix.
+        // BaseUrlInterceptor rewrites localhost → real server + `/api/v2/` prefix.
         AsyncImage(
             model = "http://localhost/tasks/$taskId/attachments/$attachmentId",
             contentDescription = null,

@@ -18,7 +18,7 @@ class BaseUrlHolder(
     fun getFullBaseUrl(): String {
         if (baseUrl.isEmpty()) return ""
         val normalized = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-        return "${normalized}api/v1/"
+        return "${normalized}api/v2/"
     }
 
     suspend fun ensureInitialized() {

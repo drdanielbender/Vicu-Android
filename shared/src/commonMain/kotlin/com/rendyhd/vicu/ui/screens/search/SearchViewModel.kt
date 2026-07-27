@@ -51,7 +51,7 @@ class SearchViewModel(
             _uiState.update { it.copy(isSearching = true) }
 
             // Trigger API search to refresh local cache
-            taskRepository.refreshAll(mapOf("s" to query))
+            taskRepository.refreshAll(mapOf("q" to query))
 
             // Observe local results
             collectJob?.cancel()

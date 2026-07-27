@@ -71,7 +71,7 @@ fun ImageViewerDialog(
                     offset = if (scale > 1f) offset + panChange else Offset.Zero
                 }
                 val attId = images[page].attachmentId
-                // BaseUrlInterceptor adds the `/api/v1/` prefix — don't duplicate it here.
+                // BaseUrlInterceptor adds the `/api/v2/` prefix — don't duplicate it here.
                 val isCurrentPage = page == pagerState.currentPage
                 AsyncImage(
                     model = "http://localhost/tasks/$taskId/attachments/$attId",

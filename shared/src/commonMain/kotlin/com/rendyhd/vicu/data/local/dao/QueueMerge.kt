@@ -1,6 +1,11 @@
 package com.rendyhd.vicu.data.local.dao
 
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
+import com.rendyhd.vicu.data.remote.api.MergePatches
+import com.rendyhd.vicu.domain.model.Label
+import com.rendyhd.vicu.domain.model.Task
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 sealed class QueueMergeOp {
     /** No pending create for this entity — normal dedup: replace its rows with the new action. */
@@ -31,4 +36,35 @@ fun resolveTaskQueueMerge(
         "delete" -> QueueMergeOp.DropAll
         else -> QueueMergeOp.ReplaceForEntity
     }
+}
+
+fun mergePatchPayloads(first: String, second: String, entityType: String = ""): String {
+    return runCatching {
+        val firstObject = Json.parseToJsonElement(
+            normalizeQueuedPatchPayload(entityType, first),
+        ) as JsonObject
+        val secondObject = Json.parseToJsonElement(
+            normalizeQueuedPatchPayload(entityType, second),
+        ) as JsonObject
+        JsonObject(firstObject + secondObject).toString()
+    }.getOrDefault(second)
+}
+
+fun normalizeQueuedPatchPayload(entityType: String, payload: String): String {
+    return runCatching {
+        val payloadObject = Json.parseToJsonElement(payload) as JsonObject
+        if ("id" !in payloadObject) return payload
+        val patch = when (entityType) {
+            "task" -> MergePatches.task(
+                previous = null,
+                current = Json.decodeFromString(Task.serializer(), payload),
+            )
+            "label" -> MergePatches.label(
+                previous = null,
+                current = Json.decodeFromString(Label.serializer(), payload),
+            )
+            else -> return payload
+        }
+        patch.toString()
+    }.getOrDefault(payload)
 }

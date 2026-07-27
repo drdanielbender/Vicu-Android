@@ -10,6 +10,7 @@ import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
+import com.rendyhd.vicu.data.remote.api.MergePatches
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.data.remote.BaseUrlHolder
 import com.rendyhd.vicu.domain.model.Task
@@ -66,28 +67,50 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                 val task = with(taskMapper) { entity.toDomain() }
                 val toggled = task.copy(done = true, doneAt = DateUtils.nowIso())
                 val dto = with(taskMapper) { toggled.toDto() }
+                val patch = MergePatches.taskDone(done = true)
+                val queuedPayload = if (taskId < 0L) {
+                    json.encodeToString(Task.serializer(), toggled)
+                } else {
+                    json.encodeToString(
+                        kotlinx.serialization.json.JsonObject.serializer(),
+                        patch,
+                    )
+                }
 
                 // Optimistic local update
                 val optimisticEntity = with(taskMapper) { dto.toEntity() }
                 taskDao.upsert(optimisticEntity)
 
                 // Remote update
-                try {
-                    val responseDto = api.updateTask(taskId, dto)
-                    val responseEntity = with(taskMapper) { responseDto.toEntity() }
-                    taskDao.upsert(responseEntity)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Remote complete failed for task $taskId, queuing for sync", e)
+                if (taskId < 0L) {
                     val action = PendingActionEntity(
                         entityType = "task",
                         entityId = taskId,
                         actionType = "toggle_done",
-                        payload = json.encodeToString(Task.serializer(), toggled),
+                        payload = queuedPayload,
                         createdAt = DateUtils.nowIso(),
                         updatedAt = DateUtils.nowIso(),
                     )
                     pendingActionDao.queueTaskActionMerging(action)
                     SyncScheduler.enqueueWhenOnline(context)
+                } else {
+                    try {
+                        val responseDto = api.updateTask(taskId, patch)
+                        val responseEntity = with(taskMapper) { responseDto.toEntity() }
+                        taskDao.upsert(responseEntity)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Remote complete failed for task $taskId, queuing for sync", e)
+                        val action = PendingActionEntity(
+                            entityType = "task",
+                            entityId = taskId,
+                            actionType = "toggle_done",
+                            payload = queuedPayload,
+                            createdAt = DateUtils.nowIso(),
+                            updatedAt = DateUtils.nowIso(),
+                        )
+                        pendingActionDao.queueTaskActionMerging(action)
+                        SyncScheduler.enqueueWhenOnline(context)
+                    }
                 }
 
                 alarmScheduler.cancelForTask(taskId)

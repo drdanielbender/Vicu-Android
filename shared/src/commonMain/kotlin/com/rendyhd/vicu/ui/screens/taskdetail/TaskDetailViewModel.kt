@@ -434,7 +434,7 @@ class TaskDetailViewModel(
     fun setRelationSearchQuery(q: String) {
         _relationSearchQuery.value = q
         if (q.isNotBlank()) {
-            viewModelScope.launch { taskRepository.refreshAll(mapOf("s" to q)) }
+            viewModelScope.launch { taskRepository.refreshAll(mapOf("q" to q)) }
         }
     }
 

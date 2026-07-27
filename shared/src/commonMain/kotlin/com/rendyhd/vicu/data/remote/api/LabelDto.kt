@@ -16,3 +16,10 @@ data class LabelDto(
     @EncodeDefault(EncodeDefault.Mode.NEVER) val created: String = "",
     @EncodeDefault(EncodeDefault.Mode.NEVER) val updated: String = "",
 )
+
+@Serializable
+data class CreateLabelDto(
+    val title: String,
+    val description: String = "",
+    @SerialName("hex_color") val hexColor: String = "",
+)

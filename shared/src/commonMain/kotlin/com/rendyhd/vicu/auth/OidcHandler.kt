@@ -78,7 +78,10 @@ class OidcHandler(
 
             val response = apiServiceProvider().exchangeOidcToken(provider.key, callbackDto)
             if (!response.isSuccessful) {
-                return OidcResult.Error("OIDC token exchange failed: HTTP ${response.code()}")
+                return OidcResult.Error(
+                    response.problem?.detail
+                        ?: "OIDC token exchange failed: HTTP ${response.code()}",
+                )
             }
             val tokenResponse = response.body()
             if (tokenResponse == null || tokenResponse.token.isBlank()) {
