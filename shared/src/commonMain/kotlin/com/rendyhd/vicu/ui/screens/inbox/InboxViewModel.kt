@@ -51,12 +51,12 @@ class InboxViewModel(
                 _uiState.update { it.copy(isLoading = false) }
                 return@launch
             }
+            if (syncStaleness.isStale()) refresh()
             taskRepository.getInboxTasks(inboxId).collect { tasks ->
                 Log.d(TAG, "Flow emission: ${tasks.size} tasks for inboxId=$inboxId")
                 _uiState.update { it.copy(tasks = tasks, isLoading = false) }
             }
         }
-        if (syncStaleness.isStale()) refresh()
     }
 
     fun refresh(showSpinner: Boolean = false) {
