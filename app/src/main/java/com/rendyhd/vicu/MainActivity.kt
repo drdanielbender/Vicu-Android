@@ -28,6 +28,11 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        const val EXTRA_SHOW_TASK_ENTRY = "show_task_entry"
+        const val EXTRA_DEFAULT_PROJECT_ID = "default_project_id"
+    }
+
     private val authManager: AuthManager by inject()
     private val baseUrlHolder: BaseUrlHolder by inject()
     private val themePrefsStore: ThemePrefsStore by inject()
@@ -121,9 +126,9 @@ class MainActivity : ComponentActivity() {
         if (taskId != 0L) {
             _initialTaskId.value = taskId
         }
-        if (intent.getBooleanExtra("show_task_entry", false)) {
+        if (intent.getBooleanExtra(EXTRA_SHOW_TASK_ENTRY, false)) {
             _showTaskEntry.value = true
-            val projectId = intent.getLongExtra("default_project_id", 0L)
+            val projectId = intent.getLongExtra(EXTRA_DEFAULT_PROJECT_ID, 0L)
             if (projectId != 0L) {
                 _showTaskEntryProjectId.value = projectId
             }

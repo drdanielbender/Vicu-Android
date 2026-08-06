@@ -55,6 +55,7 @@ data class SettingsUiState(
     val projects: List<Project> = emptyList(),
     // Notifications
     val notificationPrefs: NotificationPrefs = NotificationPrefs(),
+    val supportsQuickAddTile: Boolean = false,
     // Behavior (delete confirm, completion sound)
     val behaviorPrefs: BehaviorPrefs = BehaviorPrefs(),
     // Sync
@@ -174,6 +175,7 @@ class SettingsViewModel(
             customLists = customLists,
             projects = projects.filter { !it.isArchived },
             notificationPrefs = notifPrefs,
+            supportsQuickAddTile = platformSettingsHooks.supportsQuickAddTile,
             behaviorPrefs = behaviorPrefs,
             pendingActionCount = pendingCount,
             failedActionCount = failedCount,
@@ -532,6 +534,12 @@ class SettingsViewModel(
             }
         } catch (e: Exception) {
             _messages.update { (e.message ?: "Failed to send notification") to null }
+        }
+    }
+
+    fun requestQuickAddTile() {
+        platformSettingsHooks.requestQuickAddTile { message ->
+            _messages.update { null to message }
         }
     }
 

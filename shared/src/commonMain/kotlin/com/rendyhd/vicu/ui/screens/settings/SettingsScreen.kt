@@ -300,6 +300,7 @@ fun SettingsScreen(
                     onNotifyUpcomingChanged = viewModel::setNotifyUpcomingEnabled,
                     onShowOffsetPicker = { showOffsetPicker = true },
                     onShowRelativePicker = { showRelativePicker = true },
+                    onAddQuickTile = viewModel::requestQuickAddTile,
                     onSendTest = viewModel::sendTestNotification,
                 )
                 2 -> GesturesTab()
@@ -1580,6 +1581,7 @@ private fun NotificationsTab(
     onNotifyUpcomingChanged: (Boolean) -> Unit,
     onShowOffsetPicker: () -> Unit,
     onShowRelativePicker: () -> Unit,
+    onAddQuickTile: () -> Unit,
     onSendTest: () -> Unit,
 ) {
     LazyColumn(
@@ -1595,6 +1597,47 @@ private fun NotificationsTab(
 
         item(key = "notif_exact_alarm_banner") {
             ExactAlarmBanner()
+        }
+
+        if (state.supportsQuickAddTile) {
+            item(key = "notif_quick_settings_header") {
+                Text(
+                    text = "Quick Settings",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+                )
+            }
+
+            item(key = "notif_quick_add_tile") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Quick Add tile",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = "Add a task from the notification shade",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    FilledTonalButton(onClick = onAddQuickTile) {
+                        Text("Add tile")
+                    }
+                }
+            }
+
+            item(key = "notif_divider_quick_settings") {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
         }
 
         item(key = "notif_task_reminders") {

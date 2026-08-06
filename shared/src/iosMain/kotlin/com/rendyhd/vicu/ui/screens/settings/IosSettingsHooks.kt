@@ -1,6 +1,8 @@
 package com.rendyhd.vicu.ui.screens.settings
 
 class IosSettingsHooks : PlatformSettingsHooks {
+    override val supportsQuickAddTile: Boolean = false
+
     override fun updateWidgets() {
         // TODO: Implement for iOS
     }
@@ -16,6 +18,10 @@ class IosSettingsHooks : PlatformSettingsHooks {
     override fun sendTestNotification(): String? {
         // TODO: Implement for iOS
         return "Test notification scheduled on iOS"
+    }
+
+    override fun requestQuickAddTile(onResult: (String) -> Unit) {
+        // Quick Settings tiles are an Android feature.
     }
 
     override fun triggerImmediateSync() {

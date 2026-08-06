@@ -3,4 +3,6 @@
     <string name="widget_name">Vicu Tasks</string>
     <string name="widget_description">Display your tasks from any view</string>
     <string name="widget_loading">Loading…</string>
+    <string name="quick_add_tile_label">Add task</string>
+    <string name="quick_add_tile_description">Quickly add a task in Vicu</string>
 </resources>

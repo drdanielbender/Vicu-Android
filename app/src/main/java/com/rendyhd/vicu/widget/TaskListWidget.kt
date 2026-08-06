@@ -97,10 +97,10 @@ class OpenTaskEntryAction : ActionCallback {
     }
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val intent = Intent(context, MainActivity::class.java).apply {
-            putExtra("show_task_entry", true)
+            putExtra(MainActivity.EXTRA_SHOW_TASK_ENTRY, true)
             val projectId = parameters[DefaultProjectIdKey] ?: 0L
             if (projectId != 0L) {
-                putExtra("default_project_id", projectId)
+                putExtra(MainActivity.EXTRA_DEFAULT_PROJECT_ID, projectId)
             }
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
