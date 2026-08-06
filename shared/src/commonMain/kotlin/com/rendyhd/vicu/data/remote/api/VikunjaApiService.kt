@@ -39,11 +39,13 @@ class VikunjaApiService(
 ) {
     companion object {
         private const val DEFAULT_PAGE_SIZE = 100
+        private const val SUBTASK_EXPANSION = "subtasks"
         private val MERGE_PATCH = ContentType.parse("application/merge-patch+json")
     }
 
     suspend fun getTasksPage(filters: Map<String, String> = emptyMap()): PaginatedResponse<TaskDto> =
         client.get("tasks") {
+            parameter("expand", SUBTASK_EXPANSION)
             filters.forEach { (key, value) -> parameter(key, value) }
         }.bodyOrThrow()
 
@@ -51,7 +53,9 @@ class VikunjaApiService(
         fetchAllPages(filters, ::getTasksPage)
 
     suspend fun getTask(id: Long): TaskDto =
-        client.get("tasks/$id").bodyOrThrow()
+        client.get("tasks/$id") {
+            parameter("expand", SUBTASK_EXPANSION)
+        }.bodyOrThrow()
 
     suspend fun createTask(projectId: Long, task: CreateTaskDto): TaskDto =
         client.post("projects/$projectId/tasks") {
@@ -196,6 +200,7 @@ class VikunjaApiService(
         filters: Map<String, String> = emptyMap(),
     ): PaginatedResponse<TaskDto> =
         client.get("projects/$projectId/views/$viewId/tasks") {
+            parameter("expand", SUBTASK_EXPANSION)
             filters.forEach { (key, value) -> parameter(key, value) }
         }.bodyOrThrow()
 

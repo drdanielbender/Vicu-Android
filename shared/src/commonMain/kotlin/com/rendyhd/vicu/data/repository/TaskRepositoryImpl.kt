@@ -5,6 +5,7 @@ import com.rendyhd.vicu.data.local.LogbookPrefsStore
 import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
+import com.rendyhd.vicu.data.local.entity.TaskEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.data.remote.api.TaskPositionDto
 import com.rendyhd.vicu.data.remote.api.MergePatches
@@ -16,6 +17,8 @@ import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.NetworkResult
 import com.rendyhd.vicu.util.isRetriableNetworkError
 import com.rendyhd.vicu.util.Logger
+import com.rendyhd.vicu.util.RelationKind
+import com.rendyhd.vicu.util.withoutNestedSubtasks
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -106,13 +109,16 @@ class TaskRepositoryImpl(
             json.encodeToString(JsonObject.serializer(), patch)
         }
 
+    private fun List<TaskEntity>.toTopLevelTasks(): List<Task> =
+        map { with(taskMapper) { it.toDomain() } }.withoutNestedSubtasks()
+
     override fun getInboxTasks(inboxProjectId: Long): Flow<List<Task>> =
         behaviorPrefsStore.getPrefs()
             .map { it.inboxExcludeDated }
             .distinctUntilChanged()
             .flatMapLatest { excludeDated ->
                 taskDao.getInboxTasks(inboxProjectId, includeDated = !excludeDated).distinctUntilChanged().map { entities ->
-                    entities.map { with(taskMapper) { it.toDomain() } }
+                    entities.toTopLevelTasks()
                 }
             }
 
@@ -121,7 +127,7 @@ class TaskRepositoryImpl(
             .distinctUntilChanged()
             .flatMapLatest { endOfToday ->
                 taskDao.getTodayTasks(endOfToday).distinctUntilChanged().map { entities ->
-                    entities.map { with(taskMapper) { it.toDomain() } }
+                    entities.toTopLevelTasks()
                 }
             }
 
@@ -130,13 +136,13 @@ class TaskRepositoryImpl(
             .distinctUntilChanged()
             .flatMapLatest { endOfToday ->
                 taskDao.getUpcomingTasks(endOfToday).distinctUntilChanged().map { entities ->
-                    entities.map { with(taskMapper) { it.toDomain() } }
+                    entities.toTopLevelTasks()
                 }
             }
 
     override fun getAnytimeTasks(inboxProjectId: Long): Flow<List<Task>> =
         taskDao.getAnytimeTasks(inboxProjectId).distinctUntilChanged().map { entities ->
-            entities.map { with(taskMapper) { it.toDomain() } }
+            entities.toTopLevelTasks()
         }
 
     override fun getLogbookTasks(): Flow<List<Task>> =
@@ -145,13 +151,13 @@ class TaskRepositoryImpl(
             .distinctUntilChanged()
             .flatMapLatest { cutoff ->
                 taskDao.getLogbookTasks(cutoff).distinctUntilChanged().map { entities ->
-                    entities.map { with(taskMapper) { it.toDomain() } }
+                    entities.toTopLevelTasks()
                 }
             }
 
     override fun getByProjectId(projectId: Long): Flow<List<Task>> =
         taskDao.getByProjectId(projectId).distinctUntilChanged().map { entities ->
-            entities.map { with(taskMapper) { it.toDomain() } }
+            entities.toTopLevelTasks()
         }
 
     override fun getById(id: Long): Flow<Task?> =
@@ -161,22 +167,22 @@ class TaskRepositoryImpl(
 
     override fun searchByTitle(query: String): Flow<List<Task>> =
         taskDao.searchByTitle(query).map { entities ->
-            entities.map { with(taskMapper) { it.toDomain() } }
+            entities.toTopLevelTasks()
         }
 
     override fun searchByTitleIncludingDone(query: String): Flow<List<Task>> =
         taskDao.searchByTitleIncludingDone(query).map { list ->
-            list.map { with(taskMapper) { it.toDomain() } }
+            list.toTopLevelTasks()
         }
 
     override fun getAllOpenTasks(): Flow<List<Task>> =
         taskDao.getAllOpenTasks().distinctUntilChanged().map { entities ->
-            entities.map { with(taskMapper) { it.toDomain() } }
+            entities.toTopLevelTasks()
         }
 
     override fun getAllTasks(): Flow<List<Task>> =
         taskDao.getAllTasksFlow().distinctUntilChanged().map { entities ->
-            entities.map { with(taskMapper) { it.toDomain() } }
+            entities.toTopLevelTasks()
         }
 
     override suspend fun create(task: Task): NetworkResult<Task> {
@@ -310,15 +316,19 @@ class TaskRepositoryImpl(
                 parentTaskId,
                 com.rendyhd.vicu.data.remote.api.CreateRelationDto(
                     otherTaskId = createdDto.id,
-                    relationKind = "subtask",
+                    relationKind = RelationKind.SUBTASK,
                 ),
             )
 
-            taskDao.getByIdSync(parentTaskId)?.let { parent ->
-                taskDao.upsert(with(taskMapper) { parent.withRelatedTaskAdded("subtask", createdDto) })
-            }
+            val linkedChildEntity = taskDao.getByIdSync(parentTaskId)?.let { parent ->
+                with(taskMapper) {
+                    taskDao.upsert(parent.withRelatedTaskAdded(RelationKind.SUBTASK, createdDto))
+                    createdEntity.withRelatedTaskAdded(RelationKind.PARENTTASK, parent.toDomain().toDto())
+                }
+            } ?: createdEntity
+            taskDao.upsert(linkedChildEntity)
 
-            NetworkResult.Success(with(taskMapper) { createdEntity.toDomain() })
+            NetworkResult.Success(with(taskMapper) { linkedChildEntity.toDomain() })
         } catch (e: Exception) {
             NetworkResult.Error(e.message ?: "Failed to create subtask")
         }

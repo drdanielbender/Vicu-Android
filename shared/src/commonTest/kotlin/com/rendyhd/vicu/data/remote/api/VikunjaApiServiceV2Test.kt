@@ -95,6 +95,7 @@ class VikunjaApiServiceV2Test {
         val seenPages = mutableListOf<Int>()
         val engine = MockEngine { request ->
             assertEquals("needle", request.url.parameters["q"])
+            assertEquals(listOf("subtasks"), request.url.parameters.getAll("expand"))
             assertFalse(request.url.parameters.contains("s"))
             val page = request.url.parameters["page"]!!.toInt()
             seenPages += page
@@ -118,6 +119,21 @@ class VikunjaApiServiceV2Test {
     }
 
     @Test
+    fun `project view tasks request complete subtask hierarchies`() = runTest {
+        val engine = MockEngine { request ->
+            assertEquals("/projects/7/views/11/tasks", request.url.encodedPath)
+            assertEquals(listOf("subtasks"), request.url.parameters.getAll("expand"))
+            respond(
+                content = """{"items":[],"total":0,"page":1,"per_page":100,"total_pages":1}""",
+                status = HttpStatusCode.OK,
+                headers = jsonHeaders,
+            )
+        }
+
+        service(engine).getViewTasksPage(7, 11)
+    }
+
+    @Test
     fun `api token list unwraps pagination items`() = runTest {
         val engine = MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)
@@ -138,6 +154,7 @@ class VikunjaApiServiceV2Test {
     @Test
     fun `problem json detail and code are exposed for 422 validation`() = runTest {
         val engine = MockEngine {
+            assertEquals(listOf("subtasks"), it.url.parameters.getAll("expand"))
             respond(
                 content = """
                     {
