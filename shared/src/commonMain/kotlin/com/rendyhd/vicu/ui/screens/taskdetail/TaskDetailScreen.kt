@@ -80,6 +80,8 @@ import com.rendyhd.vicu.ui.components.picker.RelationTaskPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ReminderPickerDialog
 import com.rendyhd.vicu.ui.components.picker.VicuDatePickerDialog
 import com.rendyhd.vicu.ui.components.task.DescriptionField
+import com.rendyhd.vicu.ui.components.task.clearDescriptionEditorFocusOnHostTap
+import com.rendyhd.vicu.ui.components.task.rememberDescriptionEditorController
 import com.rendyhd.vicu.ui.components.task.NlpAutocompleteDropdown
 import com.rendyhd.vicu.ui.components.task.NlpVisualTransformation
 import com.rendyhd.vicu.ui.components.task.ParseChipRow
@@ -109,6 +111,15 @@ fun TaskDetailScreen(
     val relationSearchResults by viewModel.relationSearchResults.collectAsState()
     val isDarkTheme = isSystemInDarkTheme()
     var titleFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    val descriptionEditorController = rememberDescriptionEditorController()
+    val dismissEditor = {
+        descriptionEditorController.flush()
+        if (state.descriptionConflict == null) {
+            onDismiss()
+        } else {
+            viewModel.requireDescriptionConflictResolution()
+        }
+    }
 
     val filePickerLauncher = rememberFilePicker(viewModel::uploadAttachment)
     val imagePickerLauncher = rememberImagePicker(viewModel::addImageAttachment)
@@ -132,6 +143,7 @@ fun TaskDetailScreen(
     // leaves composition and fires this exactly once.
     DisposableEffect(Unit) {
         onDispose {
+            descriptionEditorController.flush()
             viewModel.saveIfChanged()
         }
     }
@@ -140,15 +152,19 @@ fun TaskDetailScreen(
     // anchor-recovery bug (issuetracker.google.com/issues/486562294, fixed only in alpha Compose)
     // that made a scrollable child shake/spring on drag. A plain screen has no drag-to-dismiss, so
     // the whole class of bugs is gone. Dismiss via the close icon or system back.
-    BackHandler { onDismiss() }
+    BackHandler(onBack = dismissEditor)
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .clearDescriptionEditorFocusOnHostTap(descriptionEditorController),
+    ) {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = { Text("Edit task") },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) {
+                        IconButton(onClick = dismissEditor) {
                             Icon(Icons.Default.Close, contentDescription = "Close")
                         }
                     },
@@ -251,7 +267,40 @@ fun TaskDetailScreen(
                     onAddImageClick = imagePickerLauncher,
                     onRemoveImageAttachment = viewModel::deleteAttachment,
                     onImagePasted = viewModel::addImageAttachment,
+                    editorController = descriptionEditorController,
                 )
+                if (state.descriptionConflict != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Description changed on another device",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Your draft is still here. Choose which version should be saved.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                TextButton(onClick = viewModel::useRemoteDescription) {
+                                    Text("Use server")
+                                }
+                                Button(onClick = viewModel::keepLocalDescription) {
+                                    Text("Keep mine")
+                                }
+                            }
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
             }
 

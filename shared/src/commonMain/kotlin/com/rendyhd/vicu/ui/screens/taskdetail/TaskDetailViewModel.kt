@@ -47,6 +47,7 @@ data class TaskDetailUiState(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val error: String? = null,
+    val descriptionConflict: DescriptionConflict? = null,
     val allProjects: List<Project> = emptyList(),
     val allLabels: List<Label> = emptyList(),
     val subtasks: List<Task> = emptyList(),
@@ -135,6 +136,7 @@ class TaskDetailViewModel(
                 isLoading = true,
                 isDeleted = false,
                 error = null,
+                descriptionConflict = null,
                 parseResult = null,
                 suppressedTypes = emptySet(),
                 manuallyEditedTypes = emptySet(),
@@ -156,6 +158,11 @@ class TaskDetailViewModel(
                         // Embedded note/page links are not editable here. Always adopt their newest
                         // server value, even when the visible description has a local draft.
                         preservedLinkHtml = split.linkHtml
+                        val descriptionConflict = if (state.task == null || state.originalTask == null) {
+                            null
+                        } else {
+                            detectDescriptionConflict(state.task, state.originalTask, incoming)
+                        }
                         val merged = if (state.task == null || state.originalTask == null) {
                             incoming
                         } else {
@@ -167,6 +174,7 @@ class TaskDetailViewModel(
                             subtasks = subtasks,
                             relations = relations,
                             isLoading = false,
+                            descriptionConflict = descriptionConflict ?: state.descriptionConflict,
                         )
                     }
                 } else {
@@ -243,6 +251,27 @@ class TaskDetailViewModel(
 
     fun updateDescription(description: String) {
         _uiState.update { it.copy(task = it.task?.copy(description = description)) }
+    }
+
+    fun keepLocalDescription() {
+        _uiState.update { it.copy(descriptionConflict = null, error = null) }
+    }
+
+    fun useRemoteDescription() {
+        _uiState.update { state ->
+            val conflict = state.descriptionConflict ?: return@update state
+            state.copy(
+                task = state.task?.copy(description = conflict.remoteDescription),
+                descriptionConflict = null,
+                error = null,
+            )
+        }
+    }
+
+    fun requireDescriptionConflictResolution() {
+        _uiState.update {
+            it.copy(error = "Choose which description to keep before closing this task.")
+        }
     }
 
     fun setDueDate(dueDate: String) {
@@ -544,6 +573,10 @@ class TaskDetailViewModel(
 
     fun saveIfChanged() {
         val state = _uiState.value
+        if (state.descriptionConflict != null) {
+            requireDescriptionConflictResolution()
+            return
+        }
         val taskWithRawTitle = state.task ?: return
         val original = state.originalTask ?: return
 
@@ -615,6 +648,7 @@ class TaskDetailViewModel(
                             parseResult = null,
                             suppressedTypes = emptySet(),
                             manuallyEditedTypes = emptySet(),
+                            descriptionConflict = null,
                             parserConfig = it.parserConfig.copy(suppressTypes = emptySet()),
                         )
                     }

@@ -4,6 +4,7 @@ import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.model.TaskReminder
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class TaskDetailReconciliationTest {
 
@@ -57,6 +58,38 @@ class TaskDetailReconciliationTest {
         assertEquals(true, reconciled.isFavorite)
         assertEquals(3, reconciled.priority)
         assertEquals("later", reconciled.updated)
+    }
+
+    @Test
+    fun detectsConcurrentDescriptionChangesUsingTheRoomRevision() {
+        val baseline = task(description = "base")
+        val local = baseline.copy(description = "local")
+        val remote = baseline.copy(description = "remote", updated = "revision-2")
+
+        assertEquals(
+            DescriptionConflict(remoteDescription = "remote", remoteUpdated = "revision-2"),
+            detectDescriptionConflict(local, baseline, remote),
+        )
+    }
+
+    @Test
+    fun matchingEchoAndPristineRemoteUpdateAreNotConflicts() {
+        val baseline = task(description = "base")
+
+        assertNull(
+            detectDescriptionConflict(
+                baseline.copy(description = "same"),
+                baseline,
+                baseline.copy(description = "same", updated = "revision-2"),
+            ),
+        )
+        assertNull(
+            detectDescriptionConflict(
+                baseline,
+                baseline,
+                baseline.copy(description = "remote", updated = "revision-2"),
+            ),
+        )
     }
 
     private fun task(
