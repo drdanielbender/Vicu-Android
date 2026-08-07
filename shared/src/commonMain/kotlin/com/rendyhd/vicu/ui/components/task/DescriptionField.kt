@@ -109,6 +109,7 @@ fun DescriptionField(
             lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 2, maxHeightInLines = 6),
             interactionSource = interactionSource,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            outputTransformation = HtmlNotesOutputTransformation,
         )
 
         if (isFocused) {

@@ -44,8 +44,8 @@ import androidx.compose.ui.unit.dp
  *
  *   Bold · Italic · Strike · Code · Bullet list · Numbered list · Link
  *
- * While editing on mobile you'll see the raw tags (`<strong>hello</strong>`);
- * on desktop and in any read-only view they render as formatted HTML.
+ * The editor keeps the raw HTML as its lossless backing value while
+ * [HtmlNotesOutputTransformation] hides the tags and renders their formatting.
  */
 @Composable
 fun RichTextFormatBar(

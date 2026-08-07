@@ -80,8 +80,6 @@ class TaskDetailViewModel(
     private val _uiState = MutableStateFlow(TaskDetailUiState())
     val uiState: StateFlow<TaskDetailUiState> = _uiState.asStateFlow()
 
-    private var taskIdLoaded = 0L
-
     /** Collectors started by loadTask; cancelled when a different task is loaded so a
      *  previously opened task's Room emissions can't overwrite the current task's state. */
     private val loadJobs = mutableListOf<Job>()
@@ -122,9 +120,8 @@ class TaskDetailViewModel(
     }
 
     fun loadTask(taskId: Long) {
-        if (taskId == taskIdLoaded) return
-        taskIdLoaded = taskId
-
+        // This ViewModel is owned above the conditional detail screen and survives its dismissal.
+        // Always restart the session so reopening the same task cannot reuse stale editor state.
         loadJobs.forEach { it.cancel() }
         loadJobs.clear()
 
@@ -152,33 +149,25 @@ class TaskDetailViewModel(
                     val relations = task.relatedTasks
                         .filterKeys { it in com.rendyhd.vicu.util.RelationKind.DISPLAYABLE }
                         .filterValues { it.isNotEmpty() }
-                    val isFirstLoad = _uiState.value.originalTask == null
-                    if (isFirstLoad) {
-                        val split = DescriptionHtml.splitForEditor(task.description)
+                    val split = DescriptionHtml.splitForEditor(task.description)
+                    val displayDesc = ImageTokens.buildValue(split.htmlBody, split.imageRefs)
+                    val incoming = task.copy(description = displayDesc)
+                    _uiState.update { state ->
+                        // Embedded note/page links are not editable here. Always adopt their newest
+                        // server value, even when the visible description has a local draft.
                         preservedLinkHtml = split.linkHtml
-                        val displayDesc = ImageTokens.buildValue(split.htmlBody, split.imageRefs)
-                        val displayTask = task.copy(description = displayDesc)
-                        _uiState.update {
-                            it.copy(
-                                task = displayTask,
-                                originalTask = displayTask,
-                                subtasks = subtasks,
-                                relations = relations,
-                                isLoading = false,
-                            )
+                        val merged = if (state.task == null || state.originalTask == null) {
+                            incoming
+                        } else {
+                            reconcileTaskEditor(state.task, state.originalTask, incoming)
                         }
-                    } else {
-                        // Preserve the user's in-progress title/description edits, but adopt
-                        // server-confirmed labels from later Room emissions so an added/removed
-                        // label is reflected here (issue #6 — the checkbox previously went stale).
-                        _uiState.update { st ->
-                            st.copy(
-                                task = st.task?.copy(labels = task.labels),
-                                subtasks = subtasks,
-                                relations = relations,
-                                isLoading = false,
-                            )
-                        }
+                        state.copy(
+                            task = merged,
+                            originalTask = incoming,
+                            subtasks = subtasks,
+                            relations = relations,
+                            isLoading = false,
+                        )
                     }
                 } else {
                     _uiState.update { it.copy(isLoading = false) }
