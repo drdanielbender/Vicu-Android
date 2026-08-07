@@ -111,8 +111,9 @@ class DrawerViewModel(
             .count { it.isOverdue }
 
         val nonArchived = projects.filter { !it.isArchived && it.id != inboxId }
+        val activeIds = nonArchived.mapTo(mutableSetOf()) { it.id }
         val roots = nonArchived
-            .filter { it.parentProjectId == 0L }
+            .filter { it.parentProjectId == 0L || it.parentProjectId !in activeIds }
             .sortedBy { it.position }
         val childMap = nonArchived
             .filter { it.parentProjectId != 0L }

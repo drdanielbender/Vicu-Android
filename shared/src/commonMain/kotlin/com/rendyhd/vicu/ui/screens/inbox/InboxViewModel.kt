@@ -13,6 +13,7 @@ import com.rendyhd.vicu.util.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -52,9 +53,24 @@ class InboxViewModel(
                 return@launch
             }
             if (syncStaleness.isStale()) refresh()
-            taskRepository.getInboxTasks(inboxId).collect { tasks ->
-                Log.d(TAG, "Flow emission: ${tasks.size} tasks for inboxId=$inboxId")
-                _uiState.update { it.copy(tasks = tasks, isLoading = false) }
+            combine(
+                taskRepository.getInboxTasks(inboxId),
+                projectRepository.getAll(),
+            ) { tasks, activeProjects ->
+                tasks to activeProjects.any { it.id == inboxId }
+            }.collect { (tasks, inboxIsActive) ->
+                Log.d(TAG, "Flow emission: ${tasks.size} tasks for inboxId=$inboxId, active=$inboxIsActive")
+                _uiState.update {
+                    it.copy(
+                        tasks = if (inboxIsActive) tasks else emptyList(),
+                        isLoading = false,
+                        error = if (inboxIsActive) {
+                            null
+                        } else {
+                            "Your Inbox project is archived. Select an active Inbox project in Settings."
+                        },
+                    )
+                }
             }
         }
     }

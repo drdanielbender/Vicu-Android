@@ -5,7 +5,10 @@ import com.rendyhd.vicu.util.NetworkResult
 import kotlinx.coroutines.flow.Flow
 
 interface ProjectRepository {
+    /** Active projects only. Normal navigation and pickers must use this flow. */
     fun getAll(): Flow<List<Project>>
+    /** Complete server snapshot, including archived projects. Intended for Settings. */
+    fun getAllIncludingArchived(): Flow<List<Project>>
     fun getById(id: Long): Flow<Project?>
     fun getChildren(parentId: Long): Flow<List<Project>>
 

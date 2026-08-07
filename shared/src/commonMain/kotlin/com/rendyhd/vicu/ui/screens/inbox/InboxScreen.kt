@@ -75,7 +75,7 @@ fun InboxScreen(
             }
         },
         floatingActionButton = {
-            if (!selectionActive) {
+            if (!selectionActive && state.error == null) {
                 VicuFab(onClick = { onShowTaskEntry(state.inboxProjectId, null) })
             }
         },
@@ -94,8 +94,8 @@ fun InboxScreen(
                     item {
                         EmptyState(
                             icon = Icons.Outlined.Inbox,
-                            title = "Inbox is empty",
-                            subtitle = "Tasks without a project appear here",
+                            title = if (state.error != null) "Inbox unavailable" else "Inbox is empty",
+                            subtitle = state.error ?: "Tasks without a project appear here",
                         )
                     }
                 } else {

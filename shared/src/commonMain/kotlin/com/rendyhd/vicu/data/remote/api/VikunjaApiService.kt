@@ -73,8 +73,12 @@ class VikunjaApiService(
         client.delete("tasks/$id").requireNoContent()
     }
 
-    suspend fun getAllProjects(): List<ProjectDto> =
-        fetchAllPages { params ->
+    suspend fun getAllProjects(includeArchived: Boolean = false): List<ProjectDto> =
+        fetchAllPages(
+            buildMap {
+                if (includeArchived) put("is_archived", "true")
+            },
+        ) { params ->
             client.get("projects") {
                 params.forEach { (key, value) -> parameter(key, value) }
             }.bodyOrThrow()

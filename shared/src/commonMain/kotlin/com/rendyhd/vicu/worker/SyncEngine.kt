@@ -3,10 +3,12 @@ package com.rendyhd.vicu.worker
 import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.data.local.dao.LabelDao
 import com.rendyhd.vicu.data.local.dao.PendingActionDao
+import com.rendyhd.vicu.data.local.dao.ProjectDao
 import com.rendyhd.vicu.data.local.dao.normalizeQueuedPatchPayload
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.LabelMapper
+import com.rendyhd.vicu.data.mapper.ProjectMapper
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.data.remote.api.LabelTaskDto
 import com.rendyhd.vicu.data.remote.api.MergePatches
@@ -36,9 +38,11 @@ class SyncEngine(
     private val pendingActionDao: PendingActionDao,
     private val taskDao: TaskDao,
     private val labelDao: LabelDao,
+    private val projectDao: ProjectDao,
     private val api: VikunjaApiService,
     private val taskMapper: TaskMapper,
     private val labelMapper: LabelMapper,
+    private val projectMapper: ProjectMapper,
     private val platformHooks: PlatformRepositoryHooks,
     private val json: Json,
     private val baseUrlHolder: BaseUrlHolder,
@@ -263,6 +267,11 @@ class SyncEngine(
             val labelEntities = labelDtos.map { with(labelMapper) { it.toEntity() } }
             labelDao.upsertAll(labelEntities)
             Logger.d(TAG, "Refreshed ${labelEntities.size} labels from server")
+
+            val projectDtos = api.getAllProjects(includeArchived = true)
+            val projectEntities = projectDtos.map { with(projectMapper) { it.toEntity() } }
+            projectDao.replaceAll(projectEntities)
+            Logger.d(TAG, "Refreshed ${projectEntities.size} projects from server")
         } catch (e: Exception) {
             Logger.e(TAG, "Server refresh failed: ${e.message}", e)
         }

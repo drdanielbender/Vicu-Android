@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -56,8 +57,14 @@ class SearchViewModel(
             // Observe local results
             collectJob?.cancel()
             collectJob = viewModelScope.launch {
-                taskRepository.searchByTitle(query).collect { tasks ->
-                    _uiState.update { it.copy(results = tasks, isSearching = false) }
+                combine(
+                    taskRepository.searchByTitle(query),
+                    projectRepository.getAll(),
+                ) { tasks, projects ->
+                    val activeIds = projects.mapTo(mutableSetOf()) { it.id }
+                    tasks.filter { it.projectId in activeIds }
+                }.collect { visibleTasks ->
+                    _uiState.update { it.copy(results = visibleTasks, isSearching = false) }
                 }
             }
         }

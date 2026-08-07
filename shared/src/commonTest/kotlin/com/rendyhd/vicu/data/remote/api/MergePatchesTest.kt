@@ -95,4 +95,21 @@ class MergePatchesTest {
             MergePatches.label(label, label.copy(title = "After")).keys,
         )
     }
+
+    @Test
+    fun `project archive patch changes only archive state`() {
+        val original = Project(
+            id = 7,
+            title = "Keep title",
+            description = "Keep description",
+            hexColor = "#3498db",
+            parentProjectId = 3,
+            position = 65_536.0,
+        )
+
+        val patch = MergePatches.project(original, original.copy(isArchived = true))
+
+        assertEquals(setOf("is_archived"), patch.keys)
+        assertEquals(JsonPrimitive(true), patch["is_archived"])
+    }
 }

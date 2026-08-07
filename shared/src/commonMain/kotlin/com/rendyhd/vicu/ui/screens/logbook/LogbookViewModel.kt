@@ -11,6 +11,7 @@ import com.rendyhd.vicu.util.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -33,8 +34,14 @@ class LogbookViewModel(
 
     init {
         viewModelScope.launch {
-            taskRepository.getLogbookTasks().collect { tasks ->
-                _uiState.update { it.copy(tasks = tasks, isLoading = false) }
+            combine(
+                taskRepository.getLogbookTasks(),
+                projectRepository.getAll(),
+            ) { tasks, projects ->
+                val activeIds = projects.mapTo(mutableSetOf()) { it.id }
+                tasks.filter { it.projectId in activeIds }
+            }.collect { visibleTasks ->
+                _uiState.update { it.copy(tasks = visibleTasks, isLoading = false) }
             }
         }
         refresh()

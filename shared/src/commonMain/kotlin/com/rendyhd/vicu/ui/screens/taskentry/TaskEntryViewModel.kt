@@ -91,7 +91,21 @@ class TaskEntryViewModel(
     init {
         viewModelScope.launch {
             projectRepository.getAll().collect { projects ->
-                _uiState.update { it.copy(allProjects = projects) }
+                _uiState.update { state ->
+                    val selectedProjectIsActive = projects.any { it.id == state.projectId }
+                    val fallbackProjectId = state.inboxProjectId
+                        .takeIf { inboxId -> projects.any { it.id == inboxId } }
+                        ?: projects.firstOrNull()?.id
+                        ?: 0L
+                    state.copy(
+                        allProjects = projects,
+                        projectId = if (state.projectId != 0L && !selectedProjectIsActive) {
+                            fallbackProjectId
+                        } else {
+                            state.projectId
+                        },
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -127,7 +141,7 @@ class TaskEntryViewModel(
 
     fun initWithDefaults(defaultProjectId: Long?, defaultDueDate: String? = null) {
         viewModelScope.launch {
-            val projectId = defaultProjectId ?: authManager.getInboxProjectId() ?: 0L
+            val projectId = resolveActiveProjectId(defaultProjectId)
             _uiState.update {
                 it.copy(
                     projectId = projectId,
@@ -139,7 +153,7 @@ class TaskEntryViewModel(
 
     fun initWithSharedContent(defaultProjectId: Long?, sharedContent: SharedContent) {
         viewModelScope.launch {
-            val projectId = defaultProjectId ?: authManager.getInboxProjectId() ?: 0L
+            val projectId = resolveActiveProjectId(defaultProjectId)
             _uiState.update {
                 it.copy(
                     projectId = projectId,
@@ -150,6 +164,16 @@ class TaskEntryViewModel(
                 )
             }
         }
+    }
+
+    private suspend fun resolveActiveProjectId(requestedProjectId: Long?): Long {
+        val activeProjects = projectRepository.getAll().first()
+        val activeProjectIds = activeProjects.mapTo(mutableSetOf()) { it.id }
+        val inboxProjectId = authManager.getInboxProjectId()
+        return requestedProjectId?.takeIf { it in activeProjectIds }
+            ?: inboxProjectId?.takeIf { it in activeProjectIds }
+            ?: activeProjects.firstOrNull()?.id
+            ?: 0L
     }
 
     fun removePendingAttachment(index: Int) {

@@ -83,6 +83,7 @@ class TaskWidgetWorker(
             // Build project name lookup
             val projects = projectDao.getAllSync()
             val projectNameMap = projects.associate { it.id to it.title }
+            val activeProjectIds = projectNameMap.keys
 
             Log.d(TAG, "doWork: glanceIds=${glanceIds.size}, singleWidgetId=$singleWidgetId, updateAll=$updateAll")
 
@@ -98,7 +99,9 @@ class TaskWidgetWorker(
                 Log.d(TAG, "Widget $appWidgetId config=$config (null means default TODAY)")
                 val resolvedConfig = config ?: WidgetConfig()
 
-                val entities = queryTasks(resolvedConfig)
+                val projectUnavailable = resolvedConfig.viewType == WidgetViewType.PROJECT &&
+                    resolvedConfig.viewId.toLongOrNull() !in activeProjectIds
+                val entities = queryTasks(resolvedConfig).filter { it.projectId in activeProjectIds }
                 Log.d(TAG, "Widget $appWidgetId query returned ${entities.size} tasks (viewType=${resolvedConfig.viewType})")
 
                 val totalCount = entities.size
@@ -116,7 +119,7 @@ class TaskWidgetWorker(
                 // Resolve addToProjectId for custom lists
                 val addToProjectId = if (resolvedConfig.viewType == WidgetViewType.CUSTOM_LIST) {
                     val cl = customListStore.getById(resolvedConfig.viewId).first()
-                    cl?.filter?.addToProjectId ?: 0L
+                    cl?.filter?.addToProjectId?.takeIf { it in activeProjectIds } ?: 0L
                 } else {
                     0L
                 }
@@ -131,6 +134,7 @@ class TaskWidgetWorker(
                     smartAdd = smartAddEnabled,
                     contextNav = contextNavEnabled,
                     addToProjectId = addToProjectId,
+                    error = if (projectUnavailable) "Project archived — reconfigure widget" else null,
                 )
 
                 updateAppWidgetState(

@@ -21,6 +21,11 @@ class ProjectRepositoryImpl(
             entities.map { with(projectMapper) { it.toDomain() } }
         }
 
+    override fun getAllIncludingArchived(): Flow<List<Project>> =
+        projectDao.getAllIncludingArchived().map { entities ->
+            entities.map { with(projectMapper) { it.toDomain() } }
+        }
+
     override fun getById(id: Long): Flow<Project?> =
         projectDao.getById(id).map { entity ->
             entity?.let { with(projectMapper) { it.toDomain() } }
@@ -72,9 +77,9 @@ class ProjectRepositoryImpl(
 
     override suspend fun refreshAll(): NetworkResult<Unit> {
         return try {
-            val dtos = api.getAllProjects()
+            val dtos = api.getAllProjects(includeArchived = true)
             val entities = dtos.map { with(projectMapper) { it.toEntity() } }
-            projectDao.upsertAll(entities)
+            projectDao.replaceAll(entities)
             NetworkResult.Success(Unit)
         } catch (e: Exception) {
             NetworkResult.Error(e.message ?: "Failed to refresh projects")

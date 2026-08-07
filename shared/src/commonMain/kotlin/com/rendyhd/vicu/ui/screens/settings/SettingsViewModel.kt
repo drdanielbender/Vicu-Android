@@ -53,6 +53,7 @@ data class SettingsUiState(
     val labels: List<Label> = emptyList(),
     val customLists: List<CustomList> = emptyList(),
     val projects: List<Project> = emptyList(),
+    val archivedProjects: List<Project> = emptyList(),
     // Notifications
     val notificationPrefs: NotificationPrefs = NotificationPrefs(),
     val supportsQuickAddTile: Boolean = false,
@@ -104,13 +105,18 @@ class SettingsViewModel(
 
     init {
         loadAccountInfo()
+        viewModelScope.launch {
+            // Settings is the management surface for archived projects, so refresh its
+            // complete snapshot when opened to pick up changes made in Vikunja or desktop.
+            projectRepository.refreshAll()
+        }
     }
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(
             labelRepository.getAll(),
             customListStore.getAll(),
-            projectRepository.getAll(),
+            projectRepository.getAllIncludingArchived(),
             notificationPrefsStore.getPrefs(),
             _messages,
         ) { labels, customLists, projects, notifPrefs, messages ->
@@ -174,6 +180,7 @@ class SettingsViewModel(
             labels = labels.sortedBy { it.title.lowercase() },
             customLists = customLists,
             projects = projects.filter { !it.isArchived },
+            archivedProjects = projects.filter { it.isArchived },
             notificationPrefs = notifPrefs,
             supportsQuickAddTile = platformSettingsHooks.supportsQuickAddTile,
             behaviorPrefs = behaviorPrefs,
@@ -326,6 +333,33 @@ class SettingsViewModel(
             when (val result = projectRepository.delete(projectId)) {
                 is NetworkResult.Success -> {
                     _messages.update { null to "Project deleted" }
+                }
+                is NetworkResult.Error -> {
+                    _messages.update { result.message to null }
+                }
+                is NetworkResult.Loading -> {}
+            }
+        }
+    }
+
+    fun archiveProject(project: Project) {
+        if (project.id == _inboxProjectId.value) {
+            _messages.update { "Select another Inbox project before archiving this project" to null }
+            return
+        }
+        setProjectArchived(project, archived = true)
+    }
+
+    fun restoreProject(project: Project) {
+        setProjectArchived(project, archived = false)
+    }
+
+    private fun setProjectArchived(project: Project, archived: Boolean) {
+        viewModelScope.launch {
+            when (val result = projectRepository.update(project.copy(isArchived = archived))) {
+                is NetworkResult.Success -> {
+                    platformSettingsHooks.updateWidgets()
+                    _messages.update { null to if (archived) "Project archived" else "Project restored" }
                 }
                 is NetworkResult.Error -> {
                     _messages.update { result.message to null }

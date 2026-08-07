@@ -134,6 +134,31 @@ class VikunjaApiServiceV2Test {
     }
 
     @Test
+    fun `complete project snapshot requests archived projects on every page`() = runTest {
+        val seenPages = mutableListOf<Int>()
+        val engine = MockEngine { request ->
+            assertEquals("true", request.url.parameters["is_archived"])
+            val page = request.url.parameters["page"]!!.toInt()
+            seenPages += page
+            respond(
+                content = if (page == 1) {
+                    """{"items":[{"id":1,"title":"Active"}],"total":2,"page":1,"per_page":100,"total_pages":2}"""
+                } else {
+                    """{"items":[{"id":2,"title":"Archived","is_archived":true}],"total":2,"page":2,"per_page":100,"total_pages":2}"""
+                },
+                status = HttpStatusCode.OK,
+                headers = jsonHeaders,
+            )
+        }
+
+        val projects = service(engine).getAllProjects(includeArchived = true)
+
+        assertEquals(listOf(1, 2), seenPages)
+        assertFalse(projects.first().isArchived)
+        assertTrue(projects.last().isArchived)
+    }
+
+    @Test
     fun `api token list unwraps pagination items`() = runTest {
         val engine = MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)

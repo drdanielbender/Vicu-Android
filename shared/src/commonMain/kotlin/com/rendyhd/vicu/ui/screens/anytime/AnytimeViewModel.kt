@@ -63,9 +63,12 @@ class AnytimeViewModel(
             ) { tasks, projects ->
                 val projectMap = projects.associateBy { it.id }
                 val tasksByProject = tasks.groupBy { it.projectId }
+                val activeIds = projectMap.keys
 
                 // Find top-level projects (parentProjectId == 0)
-                val topLevelProjects = projects.filter { it.parentProjectId == 0L && it.id != inboxId }
+                val topLevelProjects = projects.filter {
+                    (it.parentProjectId == 0L || it.parentProjectId !in activeIds) && it.id != inboxId
+                }
                 // Build child map: parentId -> list of children
                 val childrenByParent = projects.filter { it.parentProjectId != 0L }
                     .groupBy { it.parentProjectId }

@@ -24,6 +24,7 @@ fun buildTaskProjectGroups(
 ): List<TaskProjectGroup> {
     val projectsById = projects.associateBy { it.id }
     return tasks
+        .filter { it.projectId in projectsById }
         .groupBy { it.projectId }
         .map { (projectId, groupTasks) ->
             val project = projectsById[projectId]

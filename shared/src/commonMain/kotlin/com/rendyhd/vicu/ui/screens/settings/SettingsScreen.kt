@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.outlined.SwipeRight
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -140,6 +142,8 @@ fun SettingsScreen(
     var showProjectDialog by remember { mutableStateOf(false) }
     var editingProject by remember { mutableStateOf<Project?>(null) }
     var deletingProject by remember { mutableStateOf<Project?>(null) }
+    var archivingProject by remember { mutableStateOf<Project?>(null) }
+    var showArchivedProjects by rememberSaveable { mutableStateOf(false) }
     var showLabelDialog by remember { mutableStateOf(false) }
     var editingLabel by remember { mutableStateOf<Label?>(null) }
     var deletingLabel by remember { mutableStateOf<Label?>(null) }
@@ -235,6 +239,10 @@ fun SettingsScreen(
                             viewModel.deleteProject(project.id)
                         }
                     },
+                    onArchiveProject = { project -> archivingProject = project },
+                    onRestoreProject = viewModel::restoreProject,
+                    showArchivedProjects = showArchivedProjects,
+                    onShowArchivedProjectsChange = { showArchivedProjects = it },
                     onShowLabelDialog = { showLabelDialog = true },
                     onEditLabel = { label ->
                         editingLabel = label
@@ -559,6 +567,33 @@ fun SettingsScreen(
         )
     }
 
+    // Project archive confirmation. Archiving keeps tasks and can be reversed.
+    if (archivingProject != null) {
+        AlertDialog(
+            onDismissRequest = { archivingProject = null },
+            title = { Text("Archive Project") },
+            text = {
+                Text(
+                    "Archive \"${archivingProject!!.title}\"? Its tasks will be kept, " +
+                        "but the project will disappear from normal views. You can restore it from Settings.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.archiveProject(archivingProject!!)
+                    archivingProject = null
+                }) {
+                    Text("Archive")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { archivingProject = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     // Label create/edit dialog
     if (showLabelDialog) {
         LabelEditDialog(
@@ -766,6 +801,10 @@ private fun GeneralTab(
     onShowProjectDialog: () -> Unit,
     onEditProject: (Project) -> Unit,
     onDeleteProject: (Project) -> Unit,
+    onArchiveProject: (Project) -> Unit,
+    onRestoreProject: (Project) -> Unit,
+    showArchivedProjects: Boolean,
+    onShowArchivedProjectsChange: (Boolean) -> Unit,
     onShowLabelDialog: () -> Unit,
     onEditLabel: (Label) -> Unit,
     onDeleteLabel: (Label) -> Unit,
@@ -834,7 +873,11 @@ private fun GeneralTab(
         }
 
         item(key = "inbox_project") {
-            val inboxName = state.projects.find { it.id == state.inboxProjectId }?.title ?: "Not set"
+            val activeInbox = state.projects.find { it.id == state.inboxProjectId }
+            val archivedInbox = state.archivedProjects.find { it.id == state.inboxProjectId }
+            val inboxName = activeInbox?.title
+                ?: archivedInbox?.let { "${it.title} (archived — select another project)" }
+                ?: "Not set"
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -850,7 +893,11 @@ private fun GeneralTab(
                     Text(
                         text = inboxName,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (archivedInbox != null) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
                     )
                 }
                 Icon(
@@ -1317,6 +1364,26 @@ private fun GeneralTab(
             )
         }
 
+        item(key = "projects_show_archived") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onShowArchivedProjectsChange(!showArchivedProjects) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Show archived projects (${state.archivedProjects.size})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = showArchivedProjects,
+                    onCheckedChange = onShowArchivedProjectsChange,
+                )
+            }
+        }
+
         if (state.projects.isEmpty()) {
             item(key = "projects_empty") {
                 Text(
@@ -1334,9 +1401,48 @@ private fun GeneralTab(
                     project = project,
                     depth = depth,
                     canDelete = project.id != state.inboxProjectId,
+                    canArchive = project.id != state.inboxProjectId,
                     onEdit = { onEditProject(project) },
+                    onArchive = { onArchiveProject(project) },
+                    onRestore = {},
                     onDelete = { onDeleteProject(project) },
                 )
+            }
+        }
+
+        if (showArchivedProjects) {
+            item(key = "archived_projects_header") {
+                Text(
+                    text = "Archived",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            if (state.archivedProjects.isEmpty()) {
+                item(key = "archived_projects_empty") {
+                    Text(
+                        text = "No archived projects",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            } else {
+                val archivedTree = buildProjectTree(state.archivedProjects)
+                items(archivedTree, key = { "archived_project_${it.first.id}" }) { (project, depth) ->
+                    ProjectRow(
+                        project = project,
+                        depth = depth,
+                        canEdit = false,
+                        canDelete = project.id != state.inboxProjectId,
+                        canArchive = false,
+                        onEdit = {},
+                        onArchive = {},
+                        onRestore = { onRestoreProject(project) },
+                        onDelete = { onDeleteProject(project) },
+                    )
+                }
             }
         }
 
@@ -2170,8 +2276,12 @@ private fun LabelRow(
 private fun ProjectRow(
     project: Project,
     depth: Int = 0,
+    canEdit: Boolean = true,
     canDelete: Boolean = true,
+    canArchive: Boolean = true,
     onEdit: () -> Unit,
+    onArchive: () -> Unit,
+    onRestore: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val dotColor = parseHexColor(project.hexColor)
@@ -2180,7 +2290,7 @@ private fun ProjectRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit)
+            .clickable(enabled = canEdit, onClick = onEdit)
             .padding(start = indent, end = 16.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2194,15 +2304,41 @@ private fun ProjectRow(
         Text(
             text = project.title,
             style = MaterialTheme.typography.bodyLarge,
+            color = if (project.isArchived) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
-            Icon(
-                Icons.Default.Edit,
-                contentDescription = "Edit",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
+        if (canEdit) {
+            IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        if (project.isArchived) {
+            IconButton(onClick = onRestore, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Outlined.Unarchive,
+                    contentDescription = "Restore",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        } else if (canArchive) {
+            IconButton(onClick = onArchive, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Outlined.Archive,
+                    contentDescription = "Archive",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
         if (canDelete) {
             IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {

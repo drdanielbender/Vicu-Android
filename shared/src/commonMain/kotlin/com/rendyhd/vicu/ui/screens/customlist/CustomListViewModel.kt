@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -73,8 +74,10 @@ class CustomListViewModel(
                         } else {
                             taskRepository.getAllOpenTasks()
                         }
-                        source.map { tasks ->
+                        combine(source, projectRepository.getAll()) { tasks, projects ->
+                            val activeIds = projects.mapTo(mutableSetOf()) { it.id }
                             val filtered = CustomListFilterBuilder.applyClientSideFilters(tasks, customList.filter)
+                                .filter { it.projectId in activeIds }
                             customList to CustomListFilterBuilder.sortTasks(
                                 filtered,
                                 customList.filter.sortBy,

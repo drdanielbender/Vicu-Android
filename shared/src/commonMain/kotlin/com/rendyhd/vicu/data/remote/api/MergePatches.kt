@@ -41,7 +41,7 @@ object MergePatches {
         putChanged("repeat_mode", previous?.repeatMode, current.repeatMode)
         putDateChanged("start_date", previous?.startDate, current.startDate)
         putDateChanged("end_date", previous?.endDate, current.endDate)
-        putChanged("hex_color", previous?.hexColor, current.hexColor.removePrefix("#"))
+        putChanged("hex_color", previous?.hexColor?.removePrefix("#"), current.hexColor.removePrefix("#"))
         putChanged("percent_done", previous?.percentDone, current.percentDone)
         putChanged("bucket_id", previous?.bucketId, current.bucketId)
         putChanged("is_favorite", previous?.isFavorite, current.isFavorite)
@@ -68,7 +68,7 @@ object MergePatches {
     fun project(previous: Project?, current: Project): JsonObject = buildJsonObject {
         putChanged("title", previous?.title, current.title)
         putChanged("description", previous?.description, current.description)
-        putChanged("hex_color", previous?.hexColor, current.hexColor.removePrefix("#"))
+        putChanged("hex_color", previous?.hexColor?.removePrefix("#"), current.hexColor.removePrefix("#"))
         putChanged("parent_project_id", previous?.parentProjectId, current.parentProjectId)
         putChanged("position", previous?.position, current.position)
         putChanged("is_archived", previous?.isArchived, current.isArchived)
@@ -79,7 +79,7 @@ object MergePatches {
     fun label(previous: Label?, current: Label): JsonObject = buildJsonObject {
         putChanged("title", previous?.title, current.title)
         putChanged("description", previous?.description, current.description)
-        putChanged("hex_color", previous?.hexColor, current.hexColor.removePrefix("#"))
+        putChanged("hex_color", previous?.hexColor?.removePrefix("#"), current.hexColor.removePrefix("#"))
     }
 
     fun merge(first: JsonObject, second: JsonObject): JsonObject =

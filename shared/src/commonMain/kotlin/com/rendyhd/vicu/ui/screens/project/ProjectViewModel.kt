@@ -58,10 +58,23 @@ class ProjectViewModel(
             ) { project, allProjects, parentTasks ->
                 Triple(project, allProjects, parentTasks)
             }.flatMapLatest { (project, allProjects, parentTasks) ->
+                if (project == null || project.isArchived) {
+                    return@flatMapLatest flowOf(
+                        ProjectUiState(
+                            project = project,
+                            isLoading = false,
+                            error = if (project?.isArchived == true) {
+                                "This project is archived. Restore it from Settings to view its tasks."
+                            } else {
+                                "Project not found"
+                            },
+                        ),
+                    )
+                }
                 // Exclude archived projects (and, by pruning the chain, their whole
                 // subtrees) so archived sub-projects don't surface as sections — matching
                 // how the drawer hides archived projects from navigation.
-                val activeProjects = allProjects.filter { !it.isArchived }
+                val activeProjects = allProjects
                 val descendants = collectDescendants(projectId, activeProjects)
                 val unsectioned = sortProjectTasks(parentTasks.filter { !it.done })
                 if (descendants.isEmpty()) {

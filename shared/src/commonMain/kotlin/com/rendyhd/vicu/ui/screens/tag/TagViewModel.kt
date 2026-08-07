@@ -14,6 +14,7 @@ import com.rendyhd.vicu.util.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -45,10 +46,16 @@ class TagViewModel(
             _uiState.update { it.copy(label = label) }
         }
         viewModelScope.launch {
-            taskRepository.getAllOpenTasks().collect { tasks ->
+            combine(
+                taskRepository.getAllOpenTasks(),
+                projectRepository.getAll(),
+            ) { tasks, projects ->
+                val activeIds = projects.mapTo(mutableSetOf()) { it.id }
                 val filtered = tasks.filter { task ->
-                    task.labels.any { it.id == labelId }
+                    task.projectId in activeIds && task.labels.any { it.id == labelId }
                 }
+                filtered
+            }.collect { filtered ->
                 _uiState.update { it.copy(tasks = filtered, isLoading = false) }
             }
         }
