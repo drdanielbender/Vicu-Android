@@ -59,6 +59,7 @@ import com.rendyhd.vicu.ui.theme.PriorityLow
 import com.rendyhd.vicu.ui.theme.PriorityMedium
 import com.rendyhd.vicu.ui.theme.PriorityUrgent
 import com.rendyhd.vicu.util.DateUtils
+import com.rendyhd.vicu.util.isRecurring
 import com.rendyhd.vicu.util.TaskLinkParser
 import com.rendyhd.vicu.util.parseHexColor
 
@@ -146,7 +147,7 @@ fun TaskItem(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
                 }
-                if (task.repeatAfter > 0 || task.repeatMode == 1) {
+                if (isRecurring(task.repeatAfter, task.repeatMode)) {
                     Icon(
                         imageVector = Icons.Outlined.Repeat,
                         contentDescription = "Repeating",

@@ -78,6 +78,7 @@ import com.rendyhd.vicu.ui.components.picker.PriorityPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ProjectPickerDialog
 import com.rendyhd.vicu.ui.components.picker.RelationTaskPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ReminderPickerDialog
+import com.rendyhd.vicu.ui.components.picker.RecurrencePickerDialog
 import com.rendyhd.vicu.ui.components.picker.VicuDatePickerDialog
 import com.rendyhd.vicu.ui.components.task.DescriptionField
 import com.rendyhd.vicu.ui.components.task.clearDescriptionEditorFocusOnHostTap
@@ -105,6 +106,7 @@ fun TaskDetailScreen(
     var showLabelPicker by remember { mutableStateOf(false) }
     var showReminderPicker by remember { mutableStateOf(false) }
     var showPriorityPicker by remember { mutableStateOf(false) }
+    var showRecurrencePicker by remember { mutableStateOf(false) }
     var subtaskInput by remember { mutableStateOf("") }
     var showSubtaskInput by remember { mutableStateOf(false) }
     var showRelationPicker by remember { mutableStateOf(false) }
@@ -428,30 +430,25 @@ fun TaskDetailScreen(
                 }
             }
 
-            // Recurrence (read-only)
-            if (task.repeatAfter > 0 || task.repeatMode == 1) {
-                item(key = "recurrence") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
+            // Recurrence
+            item(key = "recurrence") {
+                val recurrenceLabel = DateUtils.formatRecurrence(task.repeatAfter, task.repeatMode)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showRecurrencePicker = true }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    if (recurrenceLabel.isNotBlank()) {
                         Text(
-                            text = DateUtils.formatRecurrence(task.repeatAfter, task.repeatMode),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
+                            text = recurrenceLabel,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
-                        IconButton(onClick = { viewModel.clearRecurrence() }, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Clear recurrence",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    } else {
+                        Text("Set recurrence", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -758,6 +755,15 @@ fun TaskDetailScreen(
             current = state.task?.priority ?: 0,
             onPick = viewModel::setPriority,
             onDismiss = { showPriorityPicker = false },
+        )
+    }
+
+    if (showRecurrencePicker) {
+        RecurrencePickerDialog(
+            repeatAfter = state.task?.repeatAfter ?: 0L,
+            repeatMode = state.task?.repeatMode ?: 0,
+            onPick = viewModel::setRecurrence,
+            onDismiss = { showRecurrencePicker = false },
         )
     }
 

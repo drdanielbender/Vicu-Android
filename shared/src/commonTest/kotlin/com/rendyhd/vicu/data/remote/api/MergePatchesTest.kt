@@ -65,6 +65,33 @@ class MergePatchesTest {
     }
 
     @Test
+    fun `task patch sets both recurrence fields atomically`() {
+        val original = Task(id = 1, title = "Repeat", repeatAfter = 0, repeatMode = 0)
+
+        val patch = MergePatches.task(
+            original,
+            original.copy(repeatAfter = 604_800L, repeatMode = 2),
+        )
+
+        assertEquals(setOf("repeat_after", "repeat_mode"), patch.keys)
+        assertEquals(JsonPrimitive(604_800L), patch["repeat_after"])
+        assertEquals(JsonPrimitive(2), patch["repeat_mode"])
+    }
+
+    @Test
+    fun `task patch clears recurrence with explicit zeroes`() {
+        val original = Task(id = 1, title = "Repeat", repeatAfter = 604_800L, repeatMode = 2)
+
+        val patch = MergePatches.task(
+            original,
+            original.copy(repeatAfter = 0, repeatMode = 0),
+        )
+
+        assertEquals(JsonPrimitive(0L), patch["repeat_after"])
+        assertEquals(JsonPrimitive(0), patch["repeat_mode"])
+    }
+
+    @Test
     fun `task patch never contains response-only fields`() {
         val patch = MergePatches.task(
             previous = null,

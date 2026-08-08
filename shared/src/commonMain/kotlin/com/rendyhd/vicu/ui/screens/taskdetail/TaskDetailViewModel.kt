@@ -21,6 +21,7 @@ import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.DescriptionHtml
 import com.rendyhd.vicu.util.ImageTokens
 import com.rendyhd.vicu.util.NetworkResult
+import com.rendyhd.vicu.util.RecurrenceValue
 import com.rendyhd.vicu.util.parser.ParseResult
 import com.rendyhd.vicu.util.parser.ParserConfig
 import com.rendyhd.vicu.util.parser.TaskParser
@@ -311,11 +312,14 @@ class TaskDetailViewModel(
         }
     }
 
-    /** Clears a recurrence set elsewhere (e.g. desktop); persisted on dismiss via saveIfChanged. */
-    fun clearRecurrence() {
+    /** Persists a picker choice on dismiss and prevents title NLP from overriding it. */
+    fun setRecurrence(recurrence: RecurrenceValue) {
         _uiState.update {
             it.copy(
-                task = it.task?.copy(repeatAfter = 0, repeatMode = 0),
+                task = it.task?.copy(
+                    repeatAfter = recurrence.repeatAfter,
+                    repeatMode = recurrence.repeatMode,
+                ),
                 manuallyEditedTypes = it.manuallyEditedTypes + TokenType.RECURRENCE,
             )
         }

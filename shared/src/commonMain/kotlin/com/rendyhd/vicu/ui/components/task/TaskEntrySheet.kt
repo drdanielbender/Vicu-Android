@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -70,9 +71,11 @@ import com.rendyhd.vicu.ui.components.picker.LabelPickerDialog
 import com.rendyhd.vicu.ui.components.picker.PriorityPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ProjectPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ReminderPickerDialog
+import com.rendyhd.vicu.ui.components.picker.RecurrencePickerDialog
 import com.rendyhd.vicu.ui.components.picker.VicuDatePickerDialog
 import com.rendyhd.vicu.ui.components.shared.VicuDragHandle
 import com.rendyhd.vicu.ui.screens.taskentry.TaskEntryViewModel
+import com.rendyhd.vicu.ui.screens.taskentry.resolveTaskEntryRecurrence
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.parser.getPrefixes
 
@@ -97,6 +100,7 @@ fun TaskEntrySheet(
     var showLabelPicker by remember { mutableStateOf(false) }
     var showReminderPicker by remember { mutableStateOf(false) }
     var showPriorityPicker by remember { mutableStateOf(false) }
+    var showRecurrencePicker by remember { mutableStateOf(false) }
 
     // TextFieldValue for cursor position tracking (needed for autocomplete)
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
@@ -265,6 +269,32 @@ fun TaskEntrySheet(
                     } else null,
                 )
 
+                // Recurrence chip. The displayed value uses the same manual-over-NLP
+                // resolution as save(), so the preview always matches what will persist.
+                val effectiveRecurrence = resolveTaskEntryRecurrence(
+                    manualRecurrence = state.manualRecurrence,
+                    parserEnabled = state.parserConfig.enabled,
+                    parsedRecurrence = state.parseResult?.recurrence,
+                )
+                AssistChip(
+                    onClick = { showRecurrencePicker = true },
+                    label = {
+                        Text(
+                            if (effectiveRecurrence.isRecurring) {
+                                DateUtils.formatRecurrence(
+                                    effectiveRecurrence.repeatAfter,
+                                    effectiveRecurrence.repeatMode,
+                                )
+                            } else {
+                                "Repeat"
+                            },
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                )
+
                 // Project chip
                 val projectName = state.allProjects.find { it.id == state.projectId }?.title ?: "Project"
                 AssistChip(
@@ -406,6 +436,20 @@ fun TaskEntrySheet(
             current = state.priority,
             onPick = viewModel::setPriority,
             onDismiss = { showPriorityPicker = false },
+        )
+    }
+
+    if (showRecurrencePicker) {
+        val recurrence = resolveTaskEntryRecurrence(
+            manualRecurrence = state.manualRecurrence,
+            parserEnabled = state.parserConfig.enabled,
+            parsedRecurrence = state.parseResult?.recurrence,
+        )
+        RecurrencePickerDialog(
+            repeatAfter = recurrence.repeatAfter,
+            repeatMode = recurrence.repeatMode,
+            onPick = viewModel::setRecurrence,
+            onDismiss = { showRecurrencePicker = false },
         )
     }
 }

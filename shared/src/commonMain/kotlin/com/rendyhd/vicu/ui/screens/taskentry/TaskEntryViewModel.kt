@@ -24,6 +24,7 @@ import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.DefaultReminder
 import com.rendyhd.vicu.util.ImageTokens
 import com.rendyhd.vicu.util.NetworkResult
+import com.rendyhd.vicu.util.RecurrenceValue
 import com.rendyhd.vicu.util.parser.ParseResult
 import com.rendyhd.vicu.util.parser.ParserConfig
 import com.rendyhd.vicu.util.parser.SyntaxPrefixes
@@ -31,7 +32,6 @@ import com.rendyhd.vicu.util.parser.TaskParser
 import com.rendyhd.vicu.util.parser.TokenType
 import com.rendyhd.vicu.util.parser.extractBangToday
 import com.rendyhd.vicu.util.parser.getPrefixes
-import com.rendyhd.vicu.util.parser.recurrenceToVikunja
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,6 +50,8 @@ data class TaskEntryUiState(
     val projectId: Long = 0,
     val selectedLabelIds: Set<Long> = emptySet(),
     val reminders: List<TaskReminder> = emptyList(),
+    /** null lets NLP decide; a non-null value, including None, is an explicit picker choice. */
+    val manualRecurrence: RecurrenceValue? = null,
     val isSaving: Boolean = false,
     val savedTaskId: Long? = null,
     val error: String? = null,
@@ -266,6 +268,10 @@ class TaskEntryViewModel(
         _uiState.update { it.copy(priority = priority) }
     }
 
+    fun setRecurrence(recurrence: RecurrenceValue) {
+        _uiState.update { it.copy(manualRecurrence = recurrence) }
+    }
+
     fun cyclePriority() {
         _uiState.update { it.copy(priority = (it.priority + 1) % 5) }
     }
@@ -366,14 +372,12 @@ class TaskEntryViewModel(
         // below (so unknown labels can be auto-created via the repository).
         val manualLabelIds = state.selectedLabelIds.toMutableSet()
 
-        // Determine recurrence: parsed
-        var repeatAfter = 0L
-        var repeatMode = 0
-        if (config.enabled && parseResult?.recurrence != null) {
-            val vik = recurrenceToVikunja(parseResult.recurrence)
-            repeatAfter = vik.repeatAfter
-            repeatMode = vik.repeatMode
-        }
+        // Determine recurrence: an explicit picker choice (including None) wins over NLP.
+        val recurrence = resolveTaskEntryRecurrence(
+            manualRecurrence = state.manualRecurrence,
+            parserEnabled = config.enabled,
+            parsedRecurrence = parseResult?.recurrence,
+        )
 
         // Bang-today fallback (works even when parser disabled; skipped when the user
         // dismissed the Today chip — DATE is then in suppressTypes)
@@ -425,8 +429,8 @@ class TaskEntryViewModel(
                     priority = priority,
                     projectId = projectId,
                     reminders = state.reminders,
-                    repeatAfter = repeatAfter,
-                    repeatMode = repeatMode,
+                    repeatAfter = recurrence.repeatAfter,
+                    repeatMode = recurrence.repeatMode,
                 )
 
                 // Synthesize a default reminder when the user set a due date but no
@@ -518,6 +522,7 @@ class TaskEntryViewModel(
                 priority = 0,
                 selectedLabelIds = emptySet(),
                 reminders = emptyList(),
+                manualRecurrence = null,
                 isSaving = false,
                 savedTaskId = null,
                 error = null,

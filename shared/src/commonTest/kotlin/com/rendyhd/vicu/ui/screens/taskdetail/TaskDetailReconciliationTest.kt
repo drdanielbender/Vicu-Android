@@ -61,6 +61,41 @@ class TaskDetailReconciliationTest {
     }
 
     @Test
+    fun localRepeatAfterEditPreservesTheWholeRecurrencePair() {
+        val baseline = task().copy(repeatAfter = 86_400L, repeatMode = 0)
+        val local = baseline.copy(repeatAfter = 604_800L)
+        val incoming = baseline.copy(repeatMode = 2, updated = "later")
+
+        val reconciled = reconcileTaskEditor(local, baseline, incoming)
+
+        assertEquals(604_800L, reconciled.repeatAfter)
+        assertEquals(0, reconciled.repeatMode)
+    }
+
+    @Test
+    fun localRepeatModeEditPreservesTheWholeRecurrencePair() {
+        val baseline = task().copy(repeatAfter = 86_400L, repeatMode = 0)
+        val local = baseline.copy(repeatMode = 2)
+        val incoming = baseline.copy(repeatAfter = 604_800L, updated = "later")
+
+        val reconciled = reconcileTaskEditor(local, baseline, incoming)
+
+        assertEquals(86_400L, reconciled.repeatAfter)
+        assertEquals(2, reconciled.repeatMode)
+    }
+
+    @Test
+    fun pristineRecurrenceAdoptsBothIncomingFields() {
+        val baseline = task().copy(repeatAfter = 86_400L, repeatMode = 0)
+        val incoming = baseline.copy(repeatAfter = 0L, repeatMode = 1, updated = "later")
+
+        val reconciled = reconcileTaskEditor(baseline, baseline, incoming)
+
+        assertEquals(0L, reconciled.repeatAfter)
+        assertEquals(1, reconciled.repeatMode)
+    }
+
+    @Test
     fun detectsConcurrentDescriptionChangesUsingTheRoomRevision() {
         val baseline = task(description = "base")
         val local = baseline.copy(description = "local")

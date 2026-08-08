@@ -5,6 +5,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -44,5 +45,16 @@ class DateUtilsTest {
     @Test
     fun `formatRecurrence weekly from repeatAfter`() {
         assertTrue(DateUtils.formatRecurrence(7 * 86400, 0).contains("week", ignoreCase = true))
+    }
+
+    @Test
+    fun `formatRecurrence labels completion mode`() {
+        assertEquals("Every week from completion", DateUtils.formatRecurrence(7 * 86400, 2))
+    }
+
+    @Test
+    fun `formatRecurrence does not call fixed day intervals months`() {
+        assertEquals("Every 30 weeks", DateUtils.formatRecurrence(30L * 7L * 86400L, 0))
+        assertEquals("Every 60 days", DateUtils.formatRecurrence(60L * 86400L, 0))
     }
 }

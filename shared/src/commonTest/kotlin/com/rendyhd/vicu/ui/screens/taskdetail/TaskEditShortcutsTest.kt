@@ -66,7 +66,29 @@ class TaskEditShortcutsTest {
         assertEquals(edited.priority, result.task.priority)
         assertEquals(edited.projectId, result.task.projectId)
         assertEquals(edited.repeatAfter, result.task.repeatAfter)
+        assertEquals(edited.repeatMode, result.task.repeatMode)
         assertEquals(emptyList<String>(), result.labelNames)
+    }
+
+    @Test
+    fun `manual recurrence clear wins over parsed recurrence`() {
+        val task = Task(
+            id = 1L,
+            title = "Updated every week",
+            repeatAfter = 0L,
+            repeatMode = 0,
+        )
+        val parsed = TaskParser.parse(task.title, config)
+
+        val result = applyTaskEditShortcuts(
+            task = task,
+            parseResult = parsed,
+            projects = projects,
+            manuallyEditedTypes = setOf(TokenType.RECURRENCE),
+        )
+
+        assertEquals(0L, result.task.repeatAfter)
+        assertEquals(0, result.task.repeatMode)
     }
 
     @Test

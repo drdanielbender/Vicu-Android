@@ -37,8 +37,15 @@ object MergePatches {
         putDateChanged("due_date", previous?.dueDate, current.dueDate)
         putChanged("priority", previous?.priority, current.priority)
         putChanged("project_id", previous?.projectId, current.projectId)
-        putChanged("repeat_after", previous?.repeatAfter, current.repeatAfter)
-        putChanged("repeat_mode", previous?.repeatMode, current.repeatMode)
+        if (previous == null ||
+            previous.repeatAfter != current.repeatAfter ||
+            previous.repeatMode != current.repeatMode
+        ) {
+            // Recurrence is a two-field value. Always patch both halves together, including
+            // explicit zeroes when clearing, so queued/offline updates cannot create hybrids.
+            put("repeat_after", current.repeatAfter)
+            put("repeat_mode", current.repeatMode)
+        }
         putDateChanged("start_date", previous?.startDate, current.startDate)
         putDateChanged("end_date", previous?.endDate, current.endDate)
         putChanged("hex_color", previous?.hexColor?.removePrefix("#"), current.hexColor.removePrefix("#"))

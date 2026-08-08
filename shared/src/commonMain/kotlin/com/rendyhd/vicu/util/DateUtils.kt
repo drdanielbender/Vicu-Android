@@ -154,22 +154,7 @@ object DateUtils {
     }
 
     fun formatRecurrence(repeatAfter: Long, repeatMode: Int): String {
-        if (repeatAfter <= 0 && repeatMode == 1) return "Every month"
-        if (repeatAfter <= 0) return ""
-        val days = repeatAfter / 86400
-        val weeks = days / 7
-        val months = days / 30
-        val years = days / 365
-        return when {
-            years > 0 && days % 365 == 0L -> if (years == 1L) "Every year" else "Every $years years"
-            months > 0 && days % 30 == 0L -> if (months == 1L) "Every month" else "Every $months months"
-            weeks > 0 && days % 7 == 0L -> if (weeks == 1L) "Every week" else "Every $weeks weeks"
-            days > 0 -> if (days == 1L) "Every day" else "Every $days days"
-            else -> {
-                val hours = repeatAfter / 3600
-                if (hours > 0) "Every $hours hours" else "Every $repeatAfter seconds"
-            }
-        }
+        return com.rendyhd.vicu.util.formatRecurrence(RecurrenceValue(repeatAfter, repeatMode))
     }
 
     fun tomorrowIso(): String {
