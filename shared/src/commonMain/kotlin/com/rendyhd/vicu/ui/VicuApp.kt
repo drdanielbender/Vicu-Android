@@ -68,6 +68,7 @@ import com.rendyhd.vicu.ui.navigation.TagRoute
 import com.rendyhd.vicu.ui.navigation.TodayRoute
 import com.rendyhd.vicu.ui.navigation.UpcomingRoute
 import com.rendyhd.vicu.ui.screens.taskdetail.TaskDetailScreen
+import com.rendyhd.vicu.ui.screens.taskdetail.TaskDetailViewModel
 import kotlinx.coroutines.launch
 
 private data class BottomNavItem(
@@ -147,6 +148,22 @@ fun VicuApp(
     var taskDetailTaskId by rememberSaveable { mutableLongStateOf(0L) }
     var showNewListDialog by rememberSaveable { mutableStateOf(false) }
     var pendingSharedContent by remember { mutableStateOf<SharedContent?>(null) }
+    val taskDetailViewModel: TaskDetailViewModel = koinViewModel()
+    val taskDetailUiState by taskDetailViewModel.uiState.collectAsStateWithLifecycle()
+
+    // The ViewModel survives ordinary recompositions, while the saveable sheet request also
+    // survives process recreation. Restart the Room lookup only when the restored request has
+    // not already reached this ViewModel.
+    LaunchedEffect(showTaskDetailSheet, taskDetailTaskId, authState) {
+        if (
+            showTaskDetailSheet &&
+            taskDetailTaskId != 0L &&
+            authState == AuthState.Authenticated &&
+            taskDetailViewModel.uiState.value.requestedTaskId != taskDetailTaskId
+        ) {
+            taskDetailViewModel.loadTask(taskDetailTaskId)
+        }
+    }
 
     // Handle notification deep link → open TaskDetailSheet
     val initialTaskIdValue = initialTaskId?.collectAsStateWithLifecycle()?.value
@@ -158,6 +175,7 @@ fun VicuApp(
             return@LaunchedEffect
         }
         taskDetailTaskId = initialTaskIdValue
+        taskDetailViewModel.loadTask(initialTaskIdValue)
         showTaskDetailSheet = true
         onInitialTaskConsumed()
     }
@@ -219,6 +237,7 @@ fun VicuApp(
 
     val onTaskClick: (Long) -> Unit = { taskId ->
         taskDetailTaskId = taskId
+        taskDetailViewModel.loadTask(taskId)
         showTaskDetailSheet = true
     }
 
@@ -446,10 +465,15 @@ fun VicuApp(
     }
 
     // Task Detail (full-screen edit)
-    if (showTaskDetailSheet) {
+    if (
+        showTaskDetailSheet &&
+        !taskDetailUiState.isLoading &&
+        taskDetailUiState.task?.id == taskDetailTaskId
+    ) {
         TaskDetailScreen(
             taskId = taskDetailTaskId,
             onDismiss = { showTaskDetailSheet = false },
+            viewModel = taskDetailViewModel,
         )
     }
 

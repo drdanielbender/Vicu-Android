@@ -38,6 +38,7 @@ import com.rendyhd.vicu.worker.SyncWorker
 import com.rendyhd.vicu.worker.DailySummaryWorker
 import com.rendyhd.vicu.worker.TokenRefreshWorker
 import com.rendyhd.vicu.worker.RoutineMaintenanceWorker
+import com.rendyhd.vicu.widget.RoutineWidgetActionWorker
 import com.rendyhd.vicu.widget.TaskWidgetWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
@@ -164,6 +165,7 @@ val workerModule = module {
     workerOf(::TokenRefreshWorker)
     workerOf(::TaskWidgetWorker)
     workerOf(::RoutineMaintenanceWorker)
+    workerOf(::RoutineWidgetActionWorker)
 }
 
 val androidAppModules = listOf(

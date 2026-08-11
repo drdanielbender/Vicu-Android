@@ -72,7 +72,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import org.koin.compose.viewmodel.koinViewModel
 import com.rendyhd.vicu.ui.components.picker.LabelPickerDialog
 import com.rendyhd.vicu.ui.components.picker.PriorityPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ProjectPickerDialog
@@ -98,7 +97,7 @@ import com.rendyhd.vicu.util.parser.getPrefixes
 fun TaskDetailScreen(
     taskId: Long,
     onDismiss: () -> Unit,
-    viewModel: TaskDetailViewModel = koinViewModel(),
+    viewModel: TaskDetailViewModel,
 ) {
     val state by viewModel.uiState.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
@@ -112,7 +111,9 @@ fun TaskDetailScreen(
     var showRelationPicker by remember { mutableStateOf(false) }
     val relationSearchResults by viewModel.relationSearchResults.collectAsState()
     val isDarkTheme = isSystemInDarkTheme()
-    var titleFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    var titleFieldValue by remember(taskId) {
+        mutableStateOf(TextFieldValue(state.task?.title.orEmpty()))
+    }
     val descriptionEditorController = rememberDescriptionEditorController()
     val dismissEditor = {
         descriptionEditorController.flush()
@@ -125,10 +126,6 @@ fun TaskDetailScreen(
 
     val filePickerLauncher = rememberFilePicker(viewModel::uploadAttachment)
     val imagePickerLauncher = rememberImagePicker(viewModel::addImageAttachment)
-
-    LaunchedEffect(taskId) {
-        viewModel.loadTask(taskId)
-    }
 
     LaunchedEffect(state.task?.title) {
         val title = state.task?.title ?: return@LaunchedEffect

@@ -52,8 +52,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 import org.koin.core.context.GlobalContext
 
 class RoutineWidget : GlanceAppWidget() {
@@ -114,15 +112,13 @@ class OpenRoutinesWidgetAction : ActionCallback {
     }
 }
 
-class ToggleRoutineWidgetAction : ActionCallback, KoinComponent {
+class ToggleRoutineWidgetAction : ActionCallback {
     companion object {
         val RoutineIdKey = ActionParameters.Key<String>("routine_id")
         val DateKey = ActionParameters.Key<String>("date")
         val SlotIdKey = ActionParameters.Key<String>("slot_id")
         val CompletedKey = ActionParameters.Key<Boolean>("completed")
     }
-
-    private val repository: RoutineRepository by inject()
 
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val routineId = parameters[RoutineIdKey] ?: return
@@ -139,10 +135,8 @@ class ToggleRoutineWidgetAction : ActionCallback, KoinComponent {
                     RoutineWidgetStateDefinition.encodeState(updated)
             }
         }
+        RoutineWidgetActionScheduler.enqueue(context, routineId, date, slotId, status)
         widget.update(context, glanceId)
-
-        repository.setOccurrenceStatus(routineId, date, slotId, status)
-        widget.updateAllWidgets(context)
     }
 }
 

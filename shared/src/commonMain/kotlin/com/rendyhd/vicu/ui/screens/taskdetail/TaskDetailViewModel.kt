@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class TaskDetailUiState(
+    val requestedTaskId: Long = 0L,
     val task: Task? = null,
     val originalTask: Task? = null,
     val isLoading: Boolean = true,
@@ -134,6 +135,7 @@ class TaskDetailViewModel(
         suppressedRawTexts = emptyMap()
         _uiState.update {
             it.copy(
+                requestedTaskId = taskId,
                 task = null,
                 originalTask = null,
                 isLoading = true,
