@@ -8,6 +8,8 @@ import com.rendyhd.vicu.auth.OidcHandler
 import com.rendyhd.vicu.auth.OidcResult
 import com.rendyhd.vicu.auth.PasswordLoginHandler
 import com.rendyhd.vicu.auth.PasswordLoginResult
+import com.rendyhd.vicu.auth.isTotpPasscodeComplete
+import com.rendyhd.vicu.auth.sanitizeTotpPasscode
 import com.rendyhd.vicu.data.local.VikunjaDatabase
 import com.rendyhd.vicu.data.remote.api.OidcProviderDto
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
@@ -26,6 +28,7 @@ enum class SetupStep {
     ServerUrl,
     AuthMethodPicker,
     PasswordLogin,
+    OidcTotp,
     ApiTokenEntry,
     OidcInProgress,
     ProjectSelection,
@@ -80,7 +83,7 @@ class SetupViewModel(
     }
 
     fun updateTotpPasscode(passcode: String) {
-        _uiState.update { it.copy(totpPasscode = passcode, error = null) }
+        _uiState.update { it.copy(totpPasscode = sanitizeTotpPasscode(passcode), error = null) }
     }
 
     fun updateApiToken(token: String) {
@@ -136,7 +139,9 @@ class SetupViewModel(
     }
 
     fun selectOidcProvider(provider: OidcProviderDto) {
-        _uiState.update { it.copy(selectedProvider = provider, error = null) }
+        _uiState.update {
+            it.copy(selectedProvider = provider, totpPasscode = "", error = null)
+        }
     }
 
     fun getOidcAuthParams(): OidcHandler.AuthParams? {
@@ -151,6 +156,14 @@ class SetupViewModel(
         }
     }
 
+    fun retryOidcWithTotp(): OidcHandler.AuthParams? {
+        if (!isTotpPasscodeComplete(_uiState.value.totpPasscode)) {
+            _uiState.update { it.copy(error = "Enter the 6-digit code from your authenticator app") }
+            return null
+        }
+        return getOidcAuthParams()
+    }
+
     fun handleOidcCallback(
         code: String?,
         state: String?,
@@ -158,16 +171,27 @@ class SetupViewModel(
     ) {
         val provider = _uiState.value.selectedProvider ?: return
         val url = _uiState.value.serverUrl
+        val totpPasscode = _uiState.value.totpPasscode.takeIf(::isTotpPasscodeComplete)
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
-            when (val result = oidcHandler.handleCallbackResult(code, state, error, provider, url)) {
+            when (val result = oidcHandler.handleCallbackResult(code, state, error, provider, url, totpPasscode)) {
                 is OidcResult.Success -> {
                     clearLocalData()
                     authManager.onLoginSuccess(result.token, "oidc", url, provider.key, result.refreshToken)
                     _uiState.update { it.copy(password = "", totpPasscode = "", apiToken = "") }
                     createBackupApiToken()
                     fetchProjectsForSelection()
+                }
+                is OidcResult.NeedsTOTP -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            step = SetupStep.OidcTotp,
+                            totpPasscode = "",
+                            error = if (totpPasscode == null) null else result.message ?: "That code was not accepted",
+                        )
+                    }
                 }
                 is OidcResult.Error -> {
                     _uiState.update {
@@ -182,6 +206,10 @@ class SetupViewModel(
         val state = _uiState.value
         if (state.username.isBlank() || state.password.isBlank()) {
             _uiState.update { it.copy(error = "Please enter username and password") }
+            return
+        }
+        if (state.showTotpField && !isTotpPasscodeComplete(state.totpPasscode)) {
+            _uiState.update { it.copy(error = "Enter the 6-digit code from your authenticator app") }
             return
         }
 
@@ -234,6 +262,7 @@ class SetupViewModel(
             when (state.step) {
                 SetupStep.AuthMethodPicker -> state.copy(step = SetupStep.ServerUrl, error = null)
                 SetupStep.PasswordLogin -> state.copy(step = SetupStep.AuthMethodPicker, error = null, showTotpField = false)
+                SetupStep.OidcTotp -> state.copy(step = SetupStep.AuthMethodPicker, error = null, totpPasscode = "")
                 SetupStep.ApiTokenEntry -> state.copy(step = SetupStep.AuthMethodPicker, error = null)
                 SetupStep.OidcInProgress -> state.copy(step = SetupStep.AuthMethodPicker, error = null)
                 SetupStep.ProjectSelection -> state.copy(step = SetupStep.AuthMethodPicker, error = null)

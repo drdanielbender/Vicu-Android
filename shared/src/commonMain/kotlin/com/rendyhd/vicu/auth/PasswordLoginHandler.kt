@@ -34,7 +34,7 @@ class PasswordLoginHandler(
                         PasswordLoginResult.Success(token, refreshToken)
                     }
                 }
-                problemCode == ERROR_INVALID_TOTP && totpPasscode.isNullOrBlank() ->
+                isTotpProblemCode(problemCode) && totpPasscode.isNullOrBlank() ->
                     PasswordLoginResult.NeedsTOTP
                 problemCode == ERROR_INVALID_CREDENTIALS ->
                     PasswordLoginResult.Error(response.problem?.detail ?: "Invalid username or password")
@@ -50,6 +50,5 @@ class PasswordLoginHandler(
 
     private companion object {
         const val ERROR_INVALID_CREDENTIALS = 1011L
-        const val ERROR_INVALID_TOTP = 1017L
     }
 }

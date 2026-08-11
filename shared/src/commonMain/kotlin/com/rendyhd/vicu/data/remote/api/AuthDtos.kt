@@ -21,6 +21,7 @@ data class OidcCallbackDto(
     val code: String = "",
     @SerialName("redirect_url") val redirectUrl: String = "",
     val scope: String = "",
+    @SerialName("totp_passcode") val totpPasscode: String = "",
 )
 
 @Serializable

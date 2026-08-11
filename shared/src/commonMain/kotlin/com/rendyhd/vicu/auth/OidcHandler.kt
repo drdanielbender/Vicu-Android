@@ -3,10 +3,12 @@ package com.rendyhd.vicu.auth
 import com.rendyhd.vicu.data.remote.api.OidcCallbackDto
 import com.rendyhd.vicu.data.remote.api.OidcProviderDto
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
+import com.rendyhd.vicu.data.remote.api.VikunjaProblemDto
 import kotlin.concurrent.Volatile
 
 sealed class OidcResult {
     data class Success(val token: String, val refreshToken: String? = null) : OidcResult()
+    data class NeedsTOTP(val message: String? = null) : OidcResult()
     data class Error(val message: String) : OidcResult()
 }
 
@@ -48,6 +50,7 @@ class OidcHandler(
         error: String?,
         provider: OidcProviderDto,
         vikunjaUrl: String,
+        totpPasscode: String? = null,
     ): OidcResult {
         return try {
             if (error != null) {
@@ -74,10 +77,12 @@ class OidcHandler(
                 code = code,
                 redirectUrl = redirectUri,
                 scope = SCOPE,
+                totpPasscode = totpPasscode.orEmpty(),
             )
 
             val response = apiServiceProvider().exchangeOidcToken(provider.key, callbackDto)
             if (!response.isSuccessful) {
+                oidcTotpChallenge(response.problem)?.let { return it }
                 return OidcResult.Error(
                     response.problem?.detail
                         ?: "OIDC token exchange failed: HTTP ${response.code()}",
@@ -95,6 +100,11 @@ class OidcHandler(
             OidcResult.Error("OIDC callback failed: ${e.message}")
         }
     }
+}
+
+internal fun oidcTotpChallenge(problem: VikunjaProblemDto?): OidcResult.NeedsTOTP? {
+    if (!isTotpProblemCode(problem?.code)) return null
+    return OidcResult.NeedsTOTP(problem?.detail?.takeIf(String::isNotBlank))
 }
 
 expect fun encodeUrl(value: String): String

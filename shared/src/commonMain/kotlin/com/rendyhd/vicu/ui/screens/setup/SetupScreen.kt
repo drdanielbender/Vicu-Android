@@ -56,6 +56,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.rendyhd.vicu.auth.isTotpPasscodeComplete
 import org.koin.compose.viewmodel.koinViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -127,6 +128,18 @@ fun SetupScreen(
                     onPasswordChange = viewModel::updatePassword,
                     onTotpChange = viewModel::updateTotpPasscode,
                     onSubmit = viewModel::submitPasswordLogin,
+                )
+                SetupStep.OidcTotp -> TotpStep(
+                    passcode = state.totpPasscode,
+                    isLoading = state.isLoading,
+                    error = state.error,
+                    onPasscodeChange = viewModel::updateTotpPasscode,
+                    onSubmit = {
+                        val params = viewModel.retryOidcWithTotp()
+                        if (params != null) {
+                            oidcLauncher(params)
+                        }
+                    },
                 )
                 SetupStep.ApiTokenEntry -> ApiTokenEntryStep(
                     apiToken = state.apiToken,
@@ -389,18 +402,74 @@ private fun PasswordLoginStep(
                 ),
                 keyboardActions = KeyboardActions(onGo = { onSubmit() }),
                 enabled = !isLoading,
+                placeholder = { Text("000000") },
             )
         }
         Button(
             onClick = onSubmit,
             modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading && username.isNotBlank() && password.isNotBlank(),
+            enabled = !isLoading &&
+                username.isNotBlank() &&
+                password.isNotBlank() &&
+                (!showTotpField || isTotpPasscodeComplete(totpPasscode)),
         ) {
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(8.dp))
             }
-            Text("Sign In")
+            Text(if (showTotpField) "Verify" else "Sign In")
+        }
+    }
+}
+
+@Composable
+private fun TotpStep(
+    passcode: String,
+    isLoading: Boolean,
+    error: String?,
+    onPasscodeChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = "Two-Factor Authentication",
+            style = MaterialTheme.typography.headlineMedium,
+        )
+        Text(
+            text = "Enter the 6-digit code from your authenticator app, then complete SSO once more.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (error != null) {
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedTextField(
+            value = passcode,
+            onValueChange = onPasscodeChange,
+            label = { Text("Two-Factor Code") },
+            placeholder = { Text("000000") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Go,
+            ),
+            keyboardActions = KeyboardActions(onGo = { onSubmit() }),
+            enabled = !isLoading,
+        )
+        Button(
+            onClick = onSubmit,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading && isTotpPasscodeComplete(passcode),
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text("Continue with SSO")
         }
     }
 }
