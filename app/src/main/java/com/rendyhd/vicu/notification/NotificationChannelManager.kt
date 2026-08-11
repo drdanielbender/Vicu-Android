@@ -10,6 +10,7 @@ class NotificationChannelManager(
     companion object {
         const val CHANNEL_TASK_REMINDERS = "task_reminders"
         const val CHANNEL_DAILY_SUMMARY = "daily_summary"
+        const val CHANNEL_ROUTINES = "routine_reminders"
     }
 
     fun createChannels() {
@@ -31,6 +32,14 @@ class NotificationChannelManager(
             description = "Daily task summary digest"
         }
 
-        manager.createNotificationChannels(listOf(taskReminders, dailySummary))
+        val routines = NotificationChannel(
+            CHANNEL_ROUTINES,
+            "Routine Reminders",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "Medication, supplement, and chore routine reminders"
+        }
+
+        manager.createNotificationChannels(listOf(taskReminders, dailySummary, routines))
     }
 }

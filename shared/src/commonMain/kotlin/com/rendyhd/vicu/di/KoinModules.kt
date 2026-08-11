@@ -20,13 +20,14 @@ import com.rendyhd.vicu.worker.SyncEngine
 
 val databaseModule = module {
     single {
-        getDatabaseBuilder(get()).build()
+        getDatabaseBuilder(get()).addMigrations(MIGRATION_1_2).build()
     }
     single { get<VikunjaDatabase>().taskDao() }
     single { get<VikunjaDatabase>().projectDao() }
     single { get<VikunjaDatabase>().labelDao() }
     single { get<VikunjaDatabase>().pendingActionDao() }
     single { get<VikunjaDatabase>().attachmentDao() }
+    single { get<VikunjaDatabase>().routineArchiveDao() }
 
     single { BehaviorPrefsStore(createDataStore(get(), "behavior_prefs")) }
     single { BottomBarPrefsStore(createDataStore(get(), "bottom_bar_prefs")) }
@@ -36,6 +37,7 @@ val databaseModule = module {
     single { NlpPrefsStore(createDataStore(get(), "nlp_prefs")) }
     single { NotificationPrefsStore(createDataStore(get(), "notification_prefs")) }
     single { ReviewPrefsStore(createDataStore(get(), "review_prefs")) }
+    single { RoutinePrefsStore(createDataStore(get(), "routine_prefs")) }
     single { SnoozeStore(createDataStore(get(), "snooze_prefs"), get()) }
     single { ThemePrefsStore(createDataStore(get(), "theme_prefs")) }
     single { WidgetPrefsStore(createDataStore(get(), "widget_prefs")) }
@@ -103,6 +105,18 @@ val repositoryModule = module {
             attachmentDao = get(),
             api = get(),
             attachmentMapper = get()
+        )
+    }
+    single<RoutineRepository> {
+        RoutineRepositoryImpl(
+            taskDao = get(),
+            archiveDao = get(),
+            taskMapper = get(),
+            taskRepository = get(),
+            authManager = get(),
+            prefsStore = get(),
+            platformHooks = get(),
+            json = get(),
         )
     }
 }

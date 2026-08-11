@@ -23,6 +23,7 @@ import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
 import com.rendyhd.vicu.notification.AlarmScheduler
 import com.rendyhd.vicu.notification.DailySummaryScheduler
 import com.rendyhd.vicu.notification.NotificationChannelManager
+import com.rendyhd.vicu.notification.RoutineAlarmScheduler
 import com.rendyhd.vicu.util.CompletionSoundPlayer
 import com.rendyhd.vicu.util.AndroidNetworkMonitor
 import com.rendyhd.vicu.util.NetworkMonitor
@@ -36,6 +37,7 @@ import org.koin.androidx.workmanager.dsl.workerOf
 import com.rendyhd.vicu.worker.SyncWorker
 import com.rendyhd.vicu.worker.DailySummaryWorker
 import com.rendyhd.vicu.worker.TokenRefreshWorker
+import com.rendyhd.vicu.worker.RoutineMaintenanceWorker
 import com.rendyhd.vicu.widget.TaskWidgetWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
@@ -51,6 +53,7 @@ import com.rendyhd.vicu.ui.screens.inbox.InboxViewModel
 import com.rendyhd.vicu.ui.screens.logbook.LogbookViewModel
 import com.rendyhd.vicu.ui.screens.project.ProjectViewModel
 import com.rendyhd.vicu.ui.screens.review.ReviewViewModel
+import com.rendyhd.vicu.ui.screens.routines.RoutinesViewModel
 import com.rendyhd.vicu.ui.screens.search.SearchViewModel
 import com.rendyhd.vicu.ui.screens.settings.SettingsViewModel
 import com.rendyhd.vicu.ui.screens.setup.SetupViewModel
@@ -65,7 +68,7 @@ val appModule = module {
     single<TokenStorage> { AndroidSecureTokenStorage(androidContext()) }
     single<PlatformAuthHooks> { AndroidAuthHooks(androidContext()) }
     single<PlatformRepositoryHooks> {
-        AndroidRepositoryHooks(androidContext(), get(), get(), get<CoroutineScope>())
+        AndroidRepositoryHooks(androidContext(), get(), get(), get(), get<CoroutineScope>())
     }
     single<NetworkMonitor> { AndroidNetworkMonitor(androidContext()) }
     single<HttpClientEngine> { OkHttp.create() }
@@ -73,6 +76,7 @@ val appModule = module {
     single<PlatformSettingsHooks> { AndroidSettingsHooks(androidContext(), get()) }
 
     single { AlarmScheduler(androidContext(), get(), get(), get()) }
+    single { RoutineAlarmScheduler(androidContext(), get(), get()) }
     single { DailySummaryScheduler(androidContext()) }
     single { CompletionSoundPlayer(androidContext(), get()) }
     single { NotificationChannelManager(androidContext()) }
@@ -137,6 +141,7 @@ val viewModelModule = module {
     viewModelOf(::LogbookViewModel)
     viewModelOf(::ProjectViewModel)
     viewModelOf(::ReviewViewModel)
+    viewModelOf(::RoutinesViewModel)
     viewModelOf(::SearchViewModel)
     viewModelOf(::SettingsViewModel)
     viewModelOf(::SetupViewModel)
@@ -152,6 +157,7 @@ val workerModule = module {
     workerOf(::DailySummaryWorker)
     workerOf(::TokenRefreshWorker)
     workerOf(::TaskWidgetWorker)
+    workerOf(::RoutineMaintenanceWorker)
 }
 
 val androidAppModules = listOf(

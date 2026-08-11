@@ -88,6 +88,7 @@ class TaskDetailViewModel(
 
     /** Preserved link HTML stripped from description for display, re-appended on save. */
     private var preservedLinkHtml = ""
+    private var preservedRoutineHtml = ""
 
     /** Raw token text retained when a parse-preview chip is dismissed. */
     private var suppressedRawTexts: Map<TokenType, List<String>> = emptyMap()
@@ -129,6 +130,7 @@ class TaskDetailViewModel(
 
         // Reset state for the new task so stale data from the previous task doesn't persist
         preservedLinkHtml = ""
+        preservedRoutineHtml = ""
         suppressedRawTexts = emptyMap()
         _uiState.update {
             it.copy(
@@ -159,6 +161,7 @@ class TaskDetailViewModel(
                         // Embedded note/page links are not editable here. Always adopt their newest
                         // server value, even when the visible description has a local draft.
                         preservedLinkHtml = split.linkHtml
+                        preservedRoutineHtml = split.routineHtml
                         val descriptionConflict = if (state.task == null || state.originalTask == null) {
                             null
                         } else {
@@ -627,7 +630,12 @@ class TaskDetailViewModel(
         // contains the rich-text HTML body + [[image:N]] tokens; link metadata
         // is stored separately and stitched back here.
         val (bodyHtml, imageRefs) = ImageTokens.parseValue(task.description)
-        val fullDescription = DescriptionHtml.merge(bodyHtml, imageRefs, preservedLinkHtml)
+        val fullDescription = DescriptionHtml.merge(
+            bodyHtml,
+            imageRefs,
+            preservedLinkHtml,
+            preservedRoutineHtml,
+        )
         val taskToSave = task.copy(description = fullDescription)
 
         viewModelScope.launch {
@@ -641,6 +649,7 @@ class TaskDetailViewModel(
                     }
                     val split = DescriptionHtml.splitForEditor(result.data.description)
                     preservedLinkHtml = split.linkHtml
+                    preservedRoutineHtml = split.routineHtml
                     suppressedRawTexts = emptyMap()
                     val displayDesc = ImageTokens.buildValue(split.htmlBody, split.imageRefs)
                     val displayed = result.data.copy(description = displayDesc)

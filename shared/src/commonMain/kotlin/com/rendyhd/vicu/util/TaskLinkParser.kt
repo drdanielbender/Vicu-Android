@@ -62,7 +62,7 @@ object TaskLinkParser {
      */
     fun hasNotesContent(description: String?): Boolean {
         if (description.isNullOrBlank()) return false
-        val stripped = stripLinks(description)
+        val stripped = stripLinks(RoutineEnvelope.strip(description))
             .replace(Regex("<[^>]+>"), "")
             .replace(Regex("\\s|&nbsp;"), "")
         return stripped.isNotEmpty()

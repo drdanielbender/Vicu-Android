@@ -8,11 +8,13 @@ import com.rendyhd.vicu.data.local.dao.AttachmentDao
 import com.rendyhd.vicu.data.local.dao.LabelDao
 import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.local.dao.ProjectDao
+import com.rendyhd.vicu.data.local.dao.RoutineArchiveDao
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.AttachmentEntity
 import com.rendyhd.vicu.data.local.entity.LabelEntity
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.local.entity.ProjectEntity
+import com.rendyhd.vicu.data.local.entity.RoutineOccurrenceArchiveEntity
 import com.rendyhd.vicu.data.local.entity.TaskEntity
 
 @Database(
@@ -22,8 +24,9 @@ import com.rendyhd.vicu.data.local.entity.TaskEntity
         LabelEntity::class,
         PendingActionEntity::class,
         AttachmentEntity::class,
+        RoutineOccurrenceArchiveEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @ConstructedBy(VikunjaDatabaseConstructor::class)
@@ -33,6 +36,7 @@ abstract class VikunjaDatabase : RoomDatabase() {
     abstract fun labelDao(): LabelDao
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun attachmentDao(): AttachmentDao
+    abstract fun routineArchiveDao(): RoutineArchiveDao
 }
 
 @Suppress("NO_ACTUAL_FOR_EXPECT")

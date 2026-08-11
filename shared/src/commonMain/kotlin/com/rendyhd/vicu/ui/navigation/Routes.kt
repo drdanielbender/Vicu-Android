@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
 @Serializable object AnytimeRoute
 @Serializable object LogbookRoute
 @Serializable object ReviewRoute
+@Serializable object RoutinesRoute
 @Serializable data class ProjectRoute(val projectId: Long)
 @Serializable data class TagRoute(val labelId: Long)
 @Serializable data class CustomListRoute(val listId: String)

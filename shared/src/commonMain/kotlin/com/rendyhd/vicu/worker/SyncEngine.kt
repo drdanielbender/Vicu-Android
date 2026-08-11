@@ -21,6 +21,7 @@ import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.isRetriableNetworkError
 import com.rendyhd.vicu.util.Logger
+import com.rendyhd.vicu.util.RoutineEnvelope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration.Companion.seconds
@@ -112,6 +113,7 @@ class SyncEngine(
 
     private suspend fun findRecentDuplicate(task: Task): TaskDto? = try {
         val queuedAt = DateUtils.parseIsoDate(task.created)
+        val routineId = RoutineEnvelope.parse(task.description, json).payload?.definition?.id
         if (queuedAt == null) {
             null
         } else {
@@ -120,7 +122,12 @@ class SyncEngine(
                     val dt = DateUtils.parseIsoDate(dto.created)
                     dto.title == task.title &&
                         dto.projectId == task.projectId &&
-                        dt != null && dt > queuedAt - DUPLICATE_WINDOW_SECS.seconds
+                        dt != null && dt > queuedAt - DUPLICATE_WINDOW_SECS.seconds &&
+                        if (routineId != null) {
+                            RoutineEnvelope.parse(dto.description, json).payload?.definition?.id == routineId
+                        } else {
+                            !RoutineEnvelope.hasMarker(dto.description)
+                        }
                 }
         }
     } catch (e: Exception) {
@@ -163,10 +170,30 @@ class SyncEngine(
             }
             "update", "toggle_done" -> {
                 val taskId = tempIdMap[action.entityId] ?: action.entityId
-                val patch = json.decodeFromString(
+                var patch = json.decodeFromString(
                     JsonObject.serializer(),
                     normalizeQueuedPatchPayload("task", action.payload),
                 )
+                val localEntity = taskDao.getByIdSync(taskId)
+                if (localEntity != null && RoutineEnvelope.hasMarker(localEntity.description)) {
+                    val localTask = with(taskMapper) { localEntity.toDomain() }
+                    val localParsed = RoutineEnvelope.parse(localTask.description, json)
+                    val remoteTask = with(taskMapper) { api.getTask(taskId).toEntity().toDomain() }
+                    val remoteParsed = RoutineEnvelope.parse(remoteTask.description, json)
+                    if (localParsed.payload != null && remoteParsed.payload != null) {
+                        val mergedPayload = RoutineEnvelope.mergePayload(localParsed.payload, remoteParsed.payload)
+                        val mergedTask = remoteTask.copy(
+                            title = mergedPayload.definition.name,
+                            description = RoutineEnvelope.upsert(remoteParsed.body, mergedPayload, json),
+                            done = true,
+                            dueDate = "",
+                            repeatAfter = 0,
+                            repeatMode = 0,
+                            reminders = emptyList(),
+                        )
+                        patch = MergePatches.task(previous = null, current = mergedTask)
+                    }
+                }
                 val responseDto = api.updateTask(taskId, patch)
                 val responseEntity = with(taskMapper) { responseDto.toEntity() }
                 taskDao.upsert(responseEntity)
@@ -249,6 +276,10 @@ class SyncEngine(
             val safeEntities = taskEntities.filter { it.id !in pendingTaskIds }
             val changed = safeEntities.filter { existingById[it.id] != it }
             taskDao.upsertAll(changed)
+            var routinesTouched = changed.any { entity ->
+                RoutineEnvelope.hasMarker(entity.description) ||
+                    RoutineEnvelope.hasMarker(existingById[entity.id]?.description)
+            }
             var alarmsTouched = changed.any { e ->
                 val old = existingById[e.id]
                 old == null || old.remindersJson != e.remindersJson ||
@@ -257,10 +288,14 @@ class SyncEngine(
             val serverTaskIds = allTasks.map { it.id }.toSet() + pendingTaskIds
             val deletedIds = existingById.keys - serverTaskIds
             if (deletedIds.isNotEmpty()) {
+                routinesTouched = routinesTouched || deletedIds.any { id ->
+                    RoutineEnvelope.hasMarker(existingById[id]?.description)
+                }
                 taskDao.deleteNotIn(serverTaskIds)
                 alarmsTouched = true
             }
             if (alarmsTouched) platformHooks.rescheduleAlarms()
+            if (routinesTouched) platformHooks.routinesChanged()
             Logger.d(TAG, "Refreshed ${changed.size} changed tasks from server (skipped ${taskEntities.size - safeEntities.size} with pending actions)")
 
             val labelDtos = api.getAllLabels()

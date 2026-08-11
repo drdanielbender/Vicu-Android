@@ -5,8 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.model.OccurrenceStatus
+import com.rendyhd.vicu.domain.model.RoutineDay
+import com.rendyhd.vicu.domain.model.RoutineOccurrence
 import com.rendyhd.vicu.domain.repository.LabelRepository
 import com.rendyhd.vicu.domain.repository.ProjectRepository
+import com.rendyhd.vicu.domain.repository.RoutineRepository
 import com.rendyhd.vicu.domain.repository.TaskRepository
 import com.rendyhd.vicu.ui.screens.shared.TaskProjectGroup
 import com.rendyhd.vicu.ui.screens.shared.buildTaskProjectGroups
@@ -18,6 +22,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 
 data class TodayUiState(
     val projectGroups: List<TaskProjectGroup> = emptyList(),
@@ -25,12 +32,14 @@ data class TodayUiState(
     val isRefreshing: Boolean = false,
     val error: String? = null,
     val completedTaskIds: Set<Long> = emptySet(),
+    val routineDay: RoutineDay = RoutineDay("", emptyList()),
 )
 
 class TodayViewModel(
     private val taskRepository: TaskRepository,
     private val projectRepository: ProjectRepository,
     private val labelRepository: LabelRepository,
+    private val routineRepository: RoutineRepository,
     private val authManager: AuthManager,
     private val syncStaleness: SyncStaleness,
 ) : ViewModel() {
@@ -39,6 +48,13 @@ class TodayViewModel(
     val uiState: StateFlow<TodayUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch { routineRepository.finalizeAndPrune() }
+        viewModelScope.launch {
+            val today = Clock.System.todayIn(TimeZone.currentSystemDefault()).toString()
+            routineRepository.observeDay(today).collect { day ->
+                _uiState.update { it.copy(routineDay = day) }
+            }
+        }
         viewModelScope.launch {
             val inboxId = authManager.getInboxProjectId()
             combine(
@@ -138,5 +154,38 @@ class TodayViewModel(
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    fun toggleRoutine(occurrence: RoutineOccurrence) {
+        viewModelScope.launch {
+            val status = if (occurrence.status == OccurrenceStatus.COMPLETED) {
+                OccurrenceStatus.PENDING
+            } else {
+                OccurrenceStatus.COMPLETED
+            }
+            when (val result = routineRepository.setOccurrenceStatus(
+                occurrence.routine.definition.id,
+                occurrence.scheduledDate,
+                occurrence.slot.id,
+                status,
+            )) {
+                is NetworkResult.Error -> _uiState.update { it.copy(error = result.message) }
+                else -> Unit
+            }
+        }
+    }
+
+    fun skipRoutine(occurrence: RoutineOccurrence) {
+        viewModelScope.launch {
+            when (val result = routineRepository.setOccurrenceStatus(
+                occurrence.routine.definition.id,
+                occurrence.scheduledDate,
+                occurrence.slot.id,
+                OccurrenceStatus.SKIPPED,
+            )) {
+                is NetworkResult.Error -> _uiState.update { it.copy(error = result.message) }
+                else -> Unit
+            }
+        }
     }
 }

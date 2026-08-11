@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Settings
@@ -57,6 +58,7 @@ private val SmartListUpcomingColor = Color(0xFF3B82F6)
 private val SmartListAnytimeColor = Color(0xFF8B5CF6)
 private val SmartListLogbookColor = Color(0xFF16A34A)
 private val SmartListReviewColor = Color(0xFF8B5CF6)
+private val HealthColor = Color(0xFF2E9D78)
 
 @Composable
 fun DrawerContent(
@@ -127,6 +129,16 @@ fun DrawerContent(
                         iconTint = SmartListLogbookColor,
                         selected = currentRoute == "LogbookRoute",
                         onClick = { onNavigate(LogbookRoute) },
+                    )
+                }
+
+                item(key = "smart_routines") {
+                    SmartListItem(
+                        label = "Routines",
+                        icon = Icons.Outlined.FavoriteBorder,
+                        iconTint = HealthColor,
+                        selected = currentRoute == "RoutinesRoute",
+                        onClick = { onNavigate(RoutinesRoute) },
                     )
                 }
 

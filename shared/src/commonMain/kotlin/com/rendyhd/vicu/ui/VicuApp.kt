@@ -60,6 +60,7 @@ import com.rendyhd.vicu.ui.navigation.InboxRoute
 import com.rendyhd.vicu.ui.navigation.LogbookRoute
 import com.rendyhd.vicu.ui.navigation.ProjectRoute
 import com.rendyhd.vicu.ui.navigation.ReviewRoute
+import com.rendyhd.vicu.ui.navigation.RoutinesRoute
 import com.rendyhd.vicu.ui.navigation.SearchRoute
 import com.rendyhd.vicu.ui.navigation.SettingsRoute
 import com.rendyhd.vicu.ui.navigation.SetupRoute
@@ -190,6 +191,7 @@ fun VicuApp(
             "INBOX" -> navController.navigate(InboxRoute) { launchSingleTop = true }
             "UPCOMING" -> navController.navigate(UpcomingRoute) { launchSingleTop = true }
             "ANYTIME" -> navController.navigate(AnytimeRoute) { launchSingleTop = true }
+            "ROUTINES" -> navController.navigate(RoutinesRoute) { launchSingleTop = true }
             "PROJECT" -> {
                 val projectId = viewId.toLongOrNull()
                 if (projectId != null) {
@@ -273,6 +275,7 @@ fun VicuApp(
             dest.hasRoute(AnytimeRoute::class) -> "AnytimeRoute"
             dest.hasRoute(LogbookRoute::class) -> "LogbookRoute"
             dest.hasRoute(ReviewRoute::class) -> "ReviewRoute"
+            dest.hasRoute(RoutinesRoute::class) -> "RoutinesRoute"
             dest.hasRoute(SettingsRoute::class) -> "SettingsRoute"
             dest.hasRoute(ProjectRoute::class) -> {
                 val id = navBackStackEntry?.arguments?.getLong("projectId")

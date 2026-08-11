@@ -18,6 +18,7 @@ import com.rendyhd.vicu.util.NetworkResult
 import com.rendyhd.vicu.util.isRetriableNetworkError
 import com.rendyhd.vicu.util.Logger
 import com.rendyhd.vicu.util.RelationKind
+import com.rendyhd.vicu.util.RoutineEnvelope
 import com.rendyhd.vicu.util.withoutNestedSubtasks
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -110,7 +111,9 @@ class TaskRepositoryImpl(
         }
 
     private fun List<TaskEntity>.toTopLevelTasks(): List<Task> =
-        map { with(taskMapper) { it.toDomain() } }.withoutNestedSubtasks()
+        filterNot { RoutineEnvelope.hasMarker(it.description) }
+            .map { with(taskMapper) { it.toDomain() } }
+            .withoutNestedSubtasks()
 
     override fun getInboxTasks(inboxProjectId: Long): Flow<List<Task>> =
         behaviorPrefsStore.getPrefs()
@@ -162,7 +165,9 @@ class TaskRepositoryImpl(
 
     override fun getById(id: Long): Flow<Task?> =
         taskDao.getById(id).map { entity ->
-            entity?.let { with(taskMapper) { it.toDomain() } }
+            entity
+                ?.takeUnless { RoutineEnvelope.hasMarker(it.description) }
+                ?.let { with(taskMapper) { it.toDomain() } }
         }
 
     override fun searchByTitle(query: String): Flow<List<Task>> =
@@ -236,7 +241,31 @@ class TaskRepositoryImpl(
         if (patch.isEmpty()) return NetworkResult.Success(task)
 
         return try {
-            val responseDto = api.updateTask(task.id, patch)
+            val requestPatch = if (RoutineEnvelope.hasMarker(task.description)) {
+                val localParsed = RoutineEnvelope.parse(task.description, json)
+                val remoteTask = with(taskMapper) { api.getTask(task.id).toEntity().toDomain() }
+                val remoteParsed = RoutineEnvelope.parse(remoteTask.description, json)
+                val localPayload = localParsed.payload
+                val remotePayload = remoteParsed.payload
+                if (localPayload != null && remotePayload != null) {
+                    val mergedPayload = RoutineEnvelope.mergePayload(localPayload, remotePayload)
+                    val mergedTask = remoteTask.copy(
+                        title = mergedPayload.definition.name,
+                        description = RoutineEnvelope.upsert(remoteParsed.body, mergedPayload, json),
+                        done = true,
+                        dueDate = "",
+                        repeatAfter = 0,
+                        repeatMode = 0,
+                        reminders = emptyList(),
+                    )
+                    MergePatches.task(previous = null, current = mergedTask)
+                } else {
+                    patch
+                }
+            } else {
+                patch
+            }
+            val responseDto = api.updateTask(task.id, requestPatch)
             val responseEntity = with(taskMapper) { responseDto.toEntity() }
             taskDao.upsert(responseEntity)
 
@@ -257,7 +286,9 @@ class TaskRepositoryImpl(
     }
 
     override suspend fun getByIds(ids: Set<Long>): List<Task> =
-        taskDao.getByIds(ids.toList()).map { with(taskMapper) { it.toDomain() } }
+        taskDao.getByIds(ids.toList())
+            .filterNot { RoutineEnvelope.hasMarker(it.description) }
+            .map { with(taskMapper) { it.toDomain() } }
 
     override suspend fun applyScheduleAction(task: Task): NetworkResult<Task> {
         val action = behaviorPrefsStore.getPrefs().first().scheduleAction
@@ -513,6 +544,10 @@ class TaskRepositoryImpl(
             val safeEntities = entities.filter { it.id !in pendingTaskIds }
             val changed = safeEntities.filter { existingById[it.id] != it }
             taskDao.upsertAll(changed)
+            var routinesTouched = changed.any { entity ->
+                RoutineEnvelope.hasMarker(entity.description) ||
+                    RoutineEnvelope.hasMarker(existingById[entity.id]?.description)
+            }
             var alarmsTouched = changed.any { e ->
                 val old = existingById[e.id]
                 old == null || old.remindersJson != e.remindersJson ||
@@ -522,11 +557,15 @@ class TaskRepositoryImpl(
                 val serverTaskIds = allTasks.map { it.id }.toSet() + pendingTaskIds
                 val deletedIds = existingById.keys - serverTaskIds
                 if (deletedIds.isNotEmpty()) {
+                    routinesTouched = routinesTouched || deletedIds.any { id ->
+                        RoutineEnvelope.hasMarker(existingById[id]?.description)
+                    }
                     taskDao.deleteNotIn(serverTaskIds)
                     alarmsTouched = true
                 }
             }
             if (alarmsTouched) platformHooks.rescheduleAlarms()
+            if (routinesTouched) platformHooks.routinesChanged()
             platformHooks.updateWidgets()
             Logger.d(TAG, "refreshAll() SUCCESS: upserted ${changed.size} changed tasks (skipped ${entities.size - safeEntities.size} with pending actions)")
             NetworkResult.Success(Unit)

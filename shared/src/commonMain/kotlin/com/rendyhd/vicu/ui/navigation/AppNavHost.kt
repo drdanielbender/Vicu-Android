@@ -14,6 +14,7 @@ import com.rendyhd.vicu.ui.screens.inbox.InboxScreen
 import com.rendyhd.vicu.ui.screens.logbook.LogbookScreen
 import com.rendyhd.vicu.ui.screens.project.ProjectScreen
 import com.rendyhd.vicu.ui.screens.review.ReviewScreen
+import com.rendyhd.vicu.ui.screens.routines.RoutinesScreen
 import com.rendyhd.vicu.ui.screens.search.SearchScreen
 import com.rendyhd.vicu.ui.screens.settings.SettingsScreen
 import com.rendyhd.vicu.ui.screens.setup.SetupScreen
@@ -62,6 +63,7 @@ fun AppNavHost(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSearch = onNavigateToSearch,
                 onShowTaskEntry = onShowTaskEntry,
+                onOpenRoutines = { navController.navigate(RoutinesRoute) { launchSingleTop = true } },
             )
         }
         composable<UpcomingRoute> {
@@ -89,6 +91,12 @@ fun AppNavHost(
         }
         composable<ReviewRoute> {
             ReviewScreen(onOpenDrawer = onOpenDrawer, onTaskClick = onTaskClick)
+        }
+        composable<RoutinesRoute> {
+            RoutinesScreen(
+                onOpenDrawer = onOpenDrawer,
+                onNavigateToSearch = onNavigateToSearch,
+            )
         }
         composable<ProjectRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<ProjectRoute>()

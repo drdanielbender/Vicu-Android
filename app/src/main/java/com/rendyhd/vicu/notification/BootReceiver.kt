@@ -22,6 +22,7 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
 
     private val alarmScheduler: AlarmScheduler by inject()
     private val dailySummaryScheduler: DailySummaryScheduler by inject()
+    private val routineAlarmScheduler: RoutineAlarmScheduler by inject()
     private val prefsStore: NotificationPrefsStore by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -33,6 +34,7 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
             try {
                 alarmScheduler.rescheduleAll()
                 alarmScheduler.rescheduleSnoozes()
+                routineAlarmScheduler.rescheduleAll()
                 val prefs = prefsStore.getPrefs().first()
                 dailySummaryScheduler.scheduleIfEnabled(
                     prefs.dailySummaryEnabled,

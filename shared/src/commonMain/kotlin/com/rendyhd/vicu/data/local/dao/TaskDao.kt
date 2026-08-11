@@ -74,6 +74,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks")
     fun getAllTasksFlow(): Flow<List<TaskEntity>>
 
+    @Query("SELECT * FROM tasks WHERE description LIKE '%<!-- vicu-routine:%'")
+    fun getRoutineCarriersFlow(): Flow<List<TaskEntity>>
+
     @Query("SELECT * FROM tasks WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<Long>): List<TaskEntity>
 
@@ -185,6 +188,9 @@ interface TaskDao {
 
     @Query("SELECT * FROM tasks")
     suspend fun getAllSync(): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE description LIKE '%<!-- vicu-routine:%'")
+    suspend fun getRoutineCarriersSync(): List<TaskEntity>
 
     @Query("DELETE FROM tasks WHERE id = :id")
     suspend fun deleteById(id: Long)

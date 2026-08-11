@@ -2,7 +2,9 @@ package com.rendyhd.vicu.ui.screens.today
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +20,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +30,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
 import com.rendyhd.vicu.ui.components.section.CollapsibleSection
 import com.rendyhd.vicu.ui.components.selection.SelectionPickers
@@ -37,6 +42,7 @@ import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
 import com.rendyhd.vicu.ui.components.shared.VicuFab
 import com.rendyhd.vicu.ui.components.shared.VicuTopAppBar
 import com.rendyhd.vicu.ui.components.task.SwipeableTaskItem
+import com.rendyhd.vicu.ui.screens.routines.RoutineOccurrenceRow
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.parseHexColor
 
@@ -47,6 +53,7 @@ fun TodayScreen(
     onOpenDrawer: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onShowTaskEntry: (Long?, String?) -> Unit = { _, _ -> },
+    onOpenRoutines: () -> Unit = {},
     viewModel: TodayViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -107,7 +114,31 @@ fun TodayScreen(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (state.projectGroups.isEmpty() && !state.isLoading) {
+                if (state.routineDay.occurrences.isNotEmpty()) {
+                    item(key = "routine_header") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Routines · ${state.routineDay.completedCount}/${state.routineDay.scheduledCount}",
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = onOpenRoutines) { Text("Manage") }
+                        }
+                    }
+                    items(state.routineDay.occurrences, key = { "routine_${it.key}" }) { occurrence ->
+                        RoutineOccurrenceRow(
+                            occurrence = occurrence,
+                            onToggle = { viewModel.toggleRoutine(occurrence) },
+                            onSkip = { viewModel.skipRoutine(occurrence) },
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp).animateItem(),
+                        )
+                    }
+                }
+
+                if (state.projectGroups.isEmpty() && state.routineDay.occurrences.isEmpty() && !state.isLoading) {
                     item {
                         EmptyState(
                             icon = Icons.Outlined.WbSunny,

@@ -4,8 +4,10 @@ import android.content.Context
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
 import com.rendyhd.vicu.notification.AlarmScheduler
+import com.rendyhd.vicu.notification.RoutineAlarmScheduler
 import com.rendyhd.vicu.util.CompletionSoundPlayer
 import com.rendyhd.vicu.widget.WidgetUpdateScheduler
+import com.rendyhd.vicu.widget.RoutineWidget
 import com.rendyhd.vicu.worker.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +16,7 @@ import kotlinx.coroutines.launch
 class AndroidRepositoryHooks(
     private val context: Context,
     private val alarmScheduler: AlarmScheduler,
+    private val routineAlarmScheduler: RoutineAlarmScheduler,
     private val completionSoundPlayer: CompletionSoundPlayer,
     private val appScope: CoroutineScope,
 ) : PlatformRepositoryHooks {
@@ -42,5 +45,12 @@ class AndroidRepositoryHooks(
 
     override suspend fun rescheduleAlarms() {
         alarmScheduler.rescheduleAll()
+        routineAlarmScheduler.rescheduleAll()
+    }
+
+    override suspend fun routinesChanged() {
+        routineAlarmScheduler.rescheduleAll()
+        RoutineWidget().updateAllWidgets(context)
+        updateWidgets()
     }
 }

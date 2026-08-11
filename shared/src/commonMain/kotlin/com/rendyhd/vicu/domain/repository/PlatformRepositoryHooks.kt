@@ -9,4 +9,9 @@ interface PlatformRepositoryHooks {
     suspend fun scheduleAlarm(task: Task)
     suspend fun cancelAlarm(taskId: Long)
     suspend fun rescheduleAlarms()
+
+    /** Called after a routine definition or occurrence changes. */
+    suspend fun routinesChanged() {
+        updateWidgets()
+    }
 }
