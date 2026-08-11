@@ -2,6 +2,7 @@ package com.rendyhd.vicu.widget
 
 import android.content.Context
 import android.content.Intent
+import androidx.datastore.preferences.core.Preferences
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
@@ -25,8 +26,10 @@ import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
+import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.background
 import androidx.glance.color.ColorProvider
+import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
@@ -44,8 +47,6 @@ import androidx.glance.text.TextStyle
 import com.rendyhd.vicu.MainActivity
 import com.rendyhd.vicu.R
 import com.rendyhd.vicu.domain.model.OccurrenceStatus
-import com.rendyhd.vicu.domain.model.RoutineDay
-import com.rendyhd.vicu.domain.model.RoutineOccurrence
 import com.rendyhd.vicu.domain.repository.RoutineRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.Clock
@@ -61,26 +62,46 @@ class RoutineWidget : GlanceAppWidget() {
         private val LARGE = DpSize(250.dp, 180.dp)
     }
 
+    override val stateDefinition = RoutineWidgetStateDefinition
+
     override val sizeMode = SizeMode.Responsive(setOf(COMPACT, LARGE))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val repository = GlobalContext.get().get<RoutineRepository>()
-        val today = Clock.System.todayIn(TimeZone.currentSystemDefault()).toString()
-        val day = repository.observeDay(today).first()
         provideContent {
+            val prefs = currentState<Preferences>()
+            val state = RoutineWidgetStateDefinition.parseState(prefs)
             GlanceTheme {
                 if (androidx.glance.LocalSize.current.height < 120.dp) {
-                    CompactRoutineWidget(day)
+                    CompactRoutineWidget(state)
                 } else {
-                    LargeRoutineWidget(day)
+                    LargeRoutineWidget(state)
                 }
             }
         }
     }
 
     suspend fun updateAllWidgets(context: Context) {
+        val repository = GlobalContext.get().get<RoutineRepository>()
+        val today = Clock.System.todayIn(TimeZone.currentSystemDefault()).toString()
+        val state = RoutineWidgetState.from(repository.observeDay(today).first())
         val manager = GlanceAppWidgetManager(context)
-        manager.getGlanceIds(RoutineWidget::class.java).forEach { update(context, it) }
+        manager.getGlanceIds(RoutineWidget::class.java).forEach { glanceId ->
+            updateState(context, glanceId, state)
+            update(context, glanceId)
+        }
+    }
+
+    suspend fun updateState(
+        context: Context,
+        glanceId: GlanceId,
+        state: RoutineWidgetState,
+    ) {
+        updateAppWidgetState(context, RoutineWidgetStateDefinition, glanceId) { prefs ->
+            prefs.toMutablePreferences().apply {
+                this[RoutineWidgetStateDefinition.KEY_STATE] =
+                    RoutineWidgetStateDefinition.encodeState(state)
+            }
+        }
     }
 }
 
@@ -108,17 +129,29 @@ class ToggleRoutineWidgetAction : ActionCallback, KoinComponent {
         val date = parameters[DateKey] ?: return
         val slotId = parameters[SlotIdKey] ?: return
         val status = if (parameters[CompletedKey] == true) OccurrenceStatus.PENDING else OccurrenceStatus.COMPLETED
+
+        val widget = RoutineWidget()
+        updateAppWidgetState(context, RoutineWidgetStateDefinition, glanceId) { prefs ->
+            val current = RoutineWidgetStateDefinition.parseState(prefs)
+            val updated = current.withStatus(routineId, date, slotId, status)
+            prefs.toMutablePreferences().apply {
+                this[RoutineWidgetStateDefinition.KEY_STATE] =
+                    RoutineWidgetStateDefinition.encodeState(updated)
+            }
+        }
+        widget.update(context, glanceId)
+
         repository.setOccurrenceStatus(routineId, date, slotId, status)
-        RoutineWidget().updateAllWidgets(context)
+        widget.updateAllWidgets(context)
     }
 }
 
 private val healthColor = ColorProvider(day = Color(0xFF247D61), night = Color(0xFF69D6AD))
 
 @Composable
-private fun CompactRoutineWidget(day: RoutineDay) {
-    val next = day.occurrences.firstOrNull { it.status == OccurrenceStatus.PENDING }
-        ?: day.occurrences.firstOrNull()
+private fun CompactRoutineWidget(state: RoutineWidgetState) {
+    val next = state.occurrences.firstOrNull { it.status == OccurrenceStatus.PENDING }
+        ?: state.occurrences.firstOrNull()
     Row(
         modifier = GlanceModifier.fillMaxSize().cornerRadius(16.dp)
             .background(GlanceTheme.colors.widgetBackground).padding(14.dp)
@@ -127,12 +160,12 @@ private fun CompactRoutineWidget(day: RoutineDay) {
     ) {
         Column(modifier = GlanceModifier.defaultWeight()) {
             Text(
-                text = "Routines  ${day.completedCount}/${day.scheduledCount}",
+                text = "Routines  ${state.completedCount}/${state.scheduledCount}",
                 style = TextStyle(color = GlanceTheme.colors.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp),
                 maxLines = 1,
             )
             Text(
-                text = next?.routine?.definition?.name ?: "All clear today",
+                text = next?.routineName ?: "All clear today",
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
                 maxLines = 1,
             )
@@ -142,7 +175,7 @@ private fun CompactRoutineWidget(day: RoutineDay) {
 }
 
 @Composable
-private fun LargeRoutineWidget(day: RoutineDay) {
+private fun LargeRoutineWidget(state: RoutineWidgetState) {
     Column(
         modifier = GlanceModifier.fillMaxSize().cornerRadius(16.dp)
             .background(GlanceTheme.colors.widgetBackground).padding(16.dp),
@@ -157,18 +190,21 @@ private fun LargeRoutineWidget(day: RoutineDay) {
                 modifier = GlanceModifier.defaultWeight(),
             )
             Text(
-                text = "${day.completedCount}/${day.scheduledCount}",
+                text = "${state.completedCount}/${state.scheduledCount}",
                 style = TextStyle(color = healthColor, fontWeight = FontWeight.Bold, fontSize = 14.sp),
             )
         }
         Spacer(GlanceModifier.height(8.dp))
-        if (day.occurrences.isEmpty()) {
+        if (state.occurrences.isEmpty()) {
             Box(GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Nothing scheduled", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 13.sp))
             }
         } else {
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                items(day.occurrences, itemId = { it.key.hashCode().toLong() }) { occurrence ->
+                items(
+                    state.occurrences,
+                    itemId = { "${it.key}:${it.status}".hashCode().toLong() },
+                ) { occurrence ->
                     Row(
                         modifier = GlanceModifier.fillMaxWidth().padding(vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -177,12 +213,12 @@ private fun LargeRoutineWidget(day: RoutineDay) {
                         Spacer(GlanceModifier.width(10.dp))
                         Column(modifier = GlanceModifier.defaultWeight()) {
                             Text(
-                                occurrence.routine.definition.name,
+                                occurrence.routineName,
                                 style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
                                 maxLines = 1,
                             )
                             Text(
-                                occurrence.slot.label,
+                                occurrence.slotLabel,
                                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
                                 maxLines = 1,
                             )
@@ -195,15 +231,15 @@ private fun LargeRoutineWidget(day: RoutineDay) {
 }
 
 @Composable
-private fun RoutineWidgetCheckbox(occurrence: RoutineOccurrence) {
+private fun RoutineWidgetCheckbox(occurrence: RoutineWidgetItem) {
     val completed = occurrence.status == OccurrenceStatus.COMPLETED
     Box(
         modifier = GlanceModifier.size(38.dp).cornerRadius(19.dp).clickable(
             actionRunCallback<ToggleRoutineWidgetAction>(
                 actionParametersOf(
-                    ToggleRoutineWidgetAction.RoutineIdKey to occurrence.routine.definition.id,
+                    ToggleRoutineWidgetAction.RoutineIdKey to occurrence.routineId,
                     ToggleRoutineWidgetAction.DateKey to occurrence.scheduledDate,
-                    ToggleRoutineWidgetAction.SlotIdKey to occurrence.slot.id,
+                    ToggleRoutineWidgetAction.SlotIdKey to occurrence.slotId,
                     ToggleRoutineWidgetAction.CompletedKey to completed,
                 ),
             ),

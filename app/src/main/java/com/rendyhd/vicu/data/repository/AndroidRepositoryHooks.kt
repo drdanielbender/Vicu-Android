@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 class AndroidRepositoryHooks(
     private val context: Context,
     private val alarmScheduler: AlarmScheduler,
-    private val routineAlarmScheduler: RoutineAlarmScheduler,
+    private val routineAlarmSchedulerProvider: () -> RoutineAlarmScheduler,
     private val completionSoundPlayer: CompletionSoundPlayer,
     private val appScope: CoroutineScope,
 ) : PlatformRepositoryHooks {
@@ -45,11 +45,11 @@ class AndroidRepositoryHooks(
 
     override suspend fun rescheduleAlarms() {
         alarmScheduler.rescheduleAll()
-        routineAlarmScheduler.rescheduleAll()
+        routineAlarmSchedulerProvider().rescheduleAll()
     }
 
     override suspend fun routinesChanged() {
-        routineAlarmScheduler.rescheduleAll()
+        routineAlarmSchedulerProvider().rescheduleAll()
         RoutineWidget().updateAllWidgets(context)
         updateWidgets()
     }

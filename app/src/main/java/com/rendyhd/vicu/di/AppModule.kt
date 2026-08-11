@@ -68,7 +68,13 @@ val appModule = module {
     single<TokenStorage> { AndroidSecureTokenStorage(androidContext()) }
     single<PlatformAuthHooks> { AndroidAuthHooks(androidContext()) }
     single<PlatformRepositoryHooks> {
-        AndroidRepositoryHooks(androidContext(), get(), get(), get(), get<CoroutineScope>())
+        AndroidRepositoryHooks(
+            context = androidContext(),
+            alarmScheduler = get(),
+            routineAlarmSchedulerProvider = { get() },
+            completionSoundPlayer = get(),
+            appScope = get(),
+        )
     }
     single<NetworkMonitor> { AndroidNetworkMonitor(androidContext()) }
     single<HttpClientEngine> { OkHttp.create() }
