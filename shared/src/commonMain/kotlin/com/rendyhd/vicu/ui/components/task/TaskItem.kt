@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Checkbox
@@ -59,6 +60,7 @@ import com.rendyhd.vicu.ui.theme.PriorityLow
 import com.rendyhd.vicu.ui.theme.PriorityMedium
 import com.rendyhd.vicu.ui.theme.PriorityUrgent
 import com.rendyhd.vicu.util.DateUtils
+import com.rendyhd.vicu.util.RelationKind
 import com.rendyhd.vicu.util.isRecurring
 import com.rendyhd.vicu.util.TaskLinkParser
 import com.rendyhd.vicu.util.parseHexColor
@@ -75,6 +77,8 @@ fun TaskItem(
     selected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val subtaskCount = task.relatedTasks[RelationKind.SUBTASK].orEmpty().size
+
     Column(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -137,12 +141,19 @@ fun TaskItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                PriorityDot(priority = task.priority)
                 TaskLinkIcons(description = task.description)
                 if (TaskLinkParser.hasNotesContent(task.description)) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.Notes,
                         contentDescription = "Has notes",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
+                if (subtaskCount > 0) {
+                    Icon(
+                        imageVector = Icons.Outlined.Checklist,
+                        contentDescription = "$subtaskCount ${if (subtaskCount == 1) "subtask" else "subtasks"}",
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
@@ -171,6 +182,7 @@ fun TaskItem(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
                 }
+                PriorityDot(priority = task.priority)
                 if (!DateUtils.isNullDate(task.dueDate) && task.dueDate.isNotBlank()) {
                     TaskDueBadge(dueDate = task.dueDate)
                 }
