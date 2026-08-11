@@ -66,11 +66,44 @@ class SelectionViewModel(
         }
     }
 
-    fun bulkSchedule() {
+    fun bulkToday() {
         val ids = _selectedIds.value
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            taskRepository.getByIds(ids).forEach { taskRepository.applyScheduleAction(it) }
+            taskRepository.getByIds(ids).forEach { task ->
+                taskRepository.update(task.copy(dueDate = DateUtils.todayEndIso()))
+            }
+            clear()
+        }
+    }
+
+    fun bulkSchedule(dueDate: String) {
+        val ids = _selectedIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            taskRepository.getByIds(ids).forEach { task ->
+                taskRepository.update(task.copy(dueDate = dueDate))
+            }
+            clear()
+        }
+    }
+
+    fun bulkSetPriority(priority: Int) {
+        val ids = _selectedIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            taskRepository.getByIds(ids).forEach { task ->
+                taskRepository.update(task.copy(priority = priority))
+            }
+            clear()
+        }
+    }
+
+    fun bulkRemove() {
+        val ids = _selectedIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            ids.forEach { taskRepository.delete(it) }
             clear()
         }
     }

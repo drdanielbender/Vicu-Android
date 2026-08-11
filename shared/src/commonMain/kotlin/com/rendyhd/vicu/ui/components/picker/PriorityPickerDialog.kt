@@ -31,7 +31,7 @@ private data class PriorityOption(val value: Int, val label: String, val color: 
 
 @Composable
 fun PriorityPickerDialog(
-    current: Int,
+    current: Int?,
     onPick: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {

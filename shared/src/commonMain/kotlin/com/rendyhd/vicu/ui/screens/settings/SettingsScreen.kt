@@ -1320,7 +1320,7 @@ private fun GeneralTab(
             ) {
                 Text(text = "Swipe to schedule", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    text = "What swiping a task (and bulk Schedule) does",
+                    text = "What swiping a task does",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

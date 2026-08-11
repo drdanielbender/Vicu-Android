@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
 import com.rendyhd.vicu.ui.components.section.CollapsibleSection
+import com.rendyhd.vicu.ui.components.selection.SelectionAction
 import com.rendyhd.vicu.ui.components.selection.SelectionPickers
 import com.rendyhd.vicu.ui.components.selection.SelectionTopBar
 import com.rendyhd.vicu.ui.components.selection.SelectionViewModel
@@ -63,8 +64,7 @@ fun TodayScreen(
     val selectionVm: SelectionViewModel = koinViewModel()
     val selectedIds by selectionVm.selectedIds.collectAsState()
     val selectionActive = selectedIds.isNotEmpty()
-    var showMovePicker by remember { mutableStateOf(false) }
-    var showLabelPicker by remember { mutableStateOf(false) }
+    var selectionAction by remember { mutableStateOf<SelectionAction?>(null) }
     BackHandler(enabled = selectionActive) { selectionVm.clear() }
 
     Scaffold(
@@ -73,10 +73,13 @@ fun TodayScreen(
                 SelectionTopBar(
                     count = selectedIds.size,
                     onClose = { selectionVm.clear() },
+                    onToday = { selectionVm.bulkToday() },
                     onComplete = { selectionVm.bulkComplete() },
-                    onMove = { showMovePicker = true },
-                    onSchedule = { selectionVm.bulkSchedule() },
-                    onApplyLabel = { showLabelPicker = true },
+                    onSchedule = { selectionAction = SelectionAction.SCHEDULE },
+                    onSetPriority = { selectionAction = SelectionAction.SET_PRIORITY },
+                    onMove = { selectionAction = SelectionAction.MOVE_PROJECT },
+                    onApplyLabel = { selectionAction = SelectionAction.APPLY_LABEL },
+                    onRemove = { selectionAction = SelectionAction.REMOVE },
                 )
             } else {
                 VicuTopAppBar(
@@ -194,10 +197,9 @@ fun TodayScreen(
 
     SelectionPickers(
         selectionVm = selectionVm,
-        showMove = showMovePicker,
-        showLabel = showLabelPicker,
-        onDismissMove = { showMovePicker = false },
-        onDismissLabel = { showLabelPicker = false },
+        action = selectionAction,
+        selectedCount = selectedIds.size,
+        onDismiss = { selectionAction = null },
     )
 
     // Error snackbar with retry
