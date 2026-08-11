@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.ui.components.shared.ReviewCadenceInputDialog
 import com.rendyhd.vicu.util.ReviewState
 import com.rendyhd.vicu.util.parseHexColor
 
@@ -150,6 +151,7 @@ private fun ReviewRow(
     onExclude: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var customCadenceOpen by remember(item.project.id) { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -201,6 +203,13 @@ private fun ReviewRow(
                     )
                 }
                 DropdownMenuItem(
+                    text = { Text("Set custom cadence\u2026") },
+                    onClick = {
+                        menuOpen = false
+                        customCadenceOpen = true
+                    },
+                )
+                DropdownMenuItem(
                     text = { Text("Use default cadence") },
                     onClick = {
                         onSetCadence(null)
@@ -219,6 +228,17 @@ private fun ReviewRow(
         if (expanded) {
             ReviewExpandedContent(content = content, onTaskClick = onTaskClick)
         }
+    }
+    if (customCadenceOpen) {
+        ReviewCadenceInputDialog(
+            title = "Set review cadence",
+            initialDays = item.status.metadata.cadenceDaysOverride ?: item.status.effectiveCadenceDays,
+            onConfirm = { days ->
+                onSetCadence(days)
+                customCadenceOpen = false
+            },
+            onDismiss = { customCadenceOpen = false },
+        )
     }
 }
 

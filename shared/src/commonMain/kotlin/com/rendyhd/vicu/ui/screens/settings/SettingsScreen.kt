@@ -108,6 +108,7 @@ import com.rendyhd.vicu.ui.components.settings.NotificationsDisabledBanner
 import com.rendyhd.vicu.util.buildProjectTree
 import com.rendyhd.vicu.util.parseHexColor
 import com.rendyhd.vicu.ui.components.shared.ProjectEditDialog
+import com.rendyhd.vicu.ui.components.shared.ReviewCadenceInputDialog
 import com.rendyhd.vicu.ui.components.shared.VicuTopAppBar
 
 private val REMINDER_OFFSET_OPTIONS = listOf(
@@ -155,6 +156,7 @@ fun SettingsScreen(
     var showOffsetPicker by remember { mutableStateOf(false) }
     var showRelativePicker by remember { mutableStateOf(false) }
     var showCadenceDialog by remember { mutableStateOf(false) }
+    var showCustomCadenceDialog by remember { mutableStateOf(false) }
     var showRetentionDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
@@ -480,12 +482,41 @@ fun SettingsScreen(
                             Text("$d days")
                         }
                     }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showCadenceDialog = false
+                                showCustomCadenceDialog = true
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = state.reviewPrefs.defaultCadenceDays !in listOf(7, 14, 30, 60, 90),
+                            onClick = null,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Custom\u2026")
+                    }
                 }
             },
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showCadenceDialog = false }) { Text("Close") }
             },
+        )
+    }
+
+    if (showCustomCadenceDialog) {
+        ReviewCadenceInputDialog(
+            title = "Custom review cadence",
+            initialDays = state.reviewPrefs.defaultCadenceDays,
+            onConfirm = { days ->
+                viewModel.setReviewDefaultCadence(days)
+                showCustomCadenceDialog = false
+            },
+            onDismiss = { showCustomCadenceDialog = false },
         )
     }
 
