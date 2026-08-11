@@ -174,6 +174,26 @@ class VikunjaDescriptionHtmlProfileTest {
     }
 
     @Test
+    fun reorderedTodoBlocksPreserveOrderAndNestingAcrossHtmlRoundTrip() {
+        // Mirrors the document shape after dragging Sibling above Parent while
+        // keeping Child nested below Parent.
+        val reordered = listOf(
+            Block.todo("Sibling", checked = false),
+            Block.todo("Parent", checked = true),
+            Block.todo("Child", checked = false).copy(
+                attributes = BlockAttributes(indentationLevel = 1),
+            ),
+        )
+
+        val encoded = HtmlSchema.encode(reordered, profile)
+        val decoded = HtmlSchema.decode(encoded, profile)
+
+        assertTrue(encoded.indexOf("Sibling") < encoded.indexOf("Parent"))
+        assertTrue(encoded.indexOf("Parent") < encoded.indexOf("Child"))
+        assertEquals(reordered.semanticShape(), decoded.semanticShape())
+    }
+
+    @Test
     fun safeTableHtmlIsPreservedAfterAttributeSanitization() {
         val html = "<table data-source=\"paste\"><tr><td>Alpha</td></tr></table>"
 

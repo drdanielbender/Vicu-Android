@@ -134,7 +134,7 @@ internal fun DescriptionField(
     val editorConfig = remember {
         CascadeEditorConfig(
             blockSelectionEnabled = false,
-            blockDraggingEnabled = false,
+            blockDraggingEnabled = true,
             emptyDocumentPlaceholderEnabled = true,
             onInternalError = { error ->
                 Logger.e(
