@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import androidx.datastore.preferences.core.Preferences
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,7 +27,6 @@ import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.background
-import androidx.glance.color.ColorProvider
 import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -140,17 +138,13 @@ class ToggleRoutineWidgetAction : ActionCallback {
     }
 }
 
-private val healthColor = ColorProvider(day = Color(0xFF247D61), night = Color(0xFF69D6AD))
-private val allDoneTextColor = ColorProvider(day = Color(0x99247D61), night = Color(0xB369D6AD))
-private val allDoneBackgroundColor = ColorProvider(day = Color(0x14247D61), night = Color(0x2469D6AD))
-
 @Composable
 private fun CompactRoutineWidget(state: RoutineWidgetState) {
     val next = state.visibleOccurrences.firstOrNull { it.status == OccurrenceStatus.PENDING }
         ?: state.visibleOccurrences.firstOrNull()
     Row(
         modifier = GlanceModifier.fillMaxSize().cornerRadius(16.dp)
-            .background(GlanceTheme.colors.widgetBackground).padding(14.dp)
+            .background(GlanceTheme.colors.widgetBackground).padding(16.dp)
             .clickable(actionRunCallback<OpenRoutinesWidgetAction>()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -162,12 +156,12 @@ private fun CompactRoutineWidget(state: RoutineWidgetState) {
             )
             Text(
                 text = when {
-                    state.isAllDone -> "All done for today  ✓"
+                    state.isAllDone -> "All done for today"
                     next != null -> next.routineName
                     else -> "Nothing scheduled"
                 },
                 style = TextStyle(
-                    color = if (state.isAllDone) allDoneTextColor else GlanceTheme.colors.onSurfaceVariant,
+                    color = GlanceTheme.colors.onSurfaceVariant,
                     fontSize = 12.sp,
                 ),
                 maxLines = 1,
@@ -189,13 +183,17 @@ private fun LargeRoutineWidget(state: RoutineWidgetState) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Today’s routines",
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp),
+                text = "Routines",
+                style = TextStyle(color = GlanceTheme.colors.onSurface, fontWeight = FontWeight.Medium, fontSize = 18.sp),
                 modifier = GlanceModifier.defaultWeight(),
             )
             Text(
                 text = "${state.completedCount}/${state.scheduledCount}",
-                style = TextStyle(color = healthColor, fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                style = TextStyle(
+                    color = GlanceTheme.colors.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                ),
             )
         }
         Spacer(GlanceModifier.height(8.dp))
@@ -208,17 +206,10 @@ private fun LargeRoutineWidget(state: RoutineWidgetState) {
 
             state.isAllDone -> {
                 Box(GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Box(
-                        modifier = GlanceModifier.cornerRadius(14.dp)
-                            .background(allDoneBackgroundColor)
-                            .padding(horizontal = 18.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "All done for today  ✓",
-                            style = TextStyle(color = allDoneTextColor, fontSize = 13.sp),
-                        )
-                    }
+                    Text(
+                        "All done for today",
+                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 14.sp),
+                    )
                 }
             }
 
@@ -229,11 +220,11 @@ private fun LargeRoutineWidget(state: RoutineWidgetState) {
                         itemId = { "${it.key}:${it.status}".hashCode().toLong() },
                     ) { occurrence ->
                         Row(
-                            modifier = GlanceModifier.fillMaxWidth().padding(vertical = 5.dp),
+                            modifier = GlanceModifier.fillMaxWidth().padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             RoutineWidgetCheckbox(occurrence)
-                            Spacer(GlanceModifier.width(10.dp))
+                            Spacer(GlanceModifier.width(12.dp))
                             Column(modifier = GlanceModifier.defaultWeight()) {
                                 Text(
                                     occurrence.routineName,
@@ -258,7 +249,7 @@ private fun LargeRoutineWidget(state: RoutineWidgetState) {
 private fun RoutineWidgetCheckbox(occurrence: RoutineWidgetItem) {
     val completed = occurrence.status == OccurrenceStatus.COMPLETED
     Box(
-        modifier = GlanceModifier.size(38.dp).cornerRadius(19.dp).clickable(
+        modifier = GlanceModifier.size(36.dp).cornerRadius(18.dp).clickable(
             actionRunCallback<ToggleRoutineWidgetAction>(
                 actionParametersOf(
                     ToggleRoutineWidgetAction.RoutineIdKey to occurrence.routineId,
@@ -273,8 +264,8 @@ private fun RoutineWidgetCheckbox(occurrence: RoutineWidgetItem) {
         Image(
             provider = ImageProvider(if (completed) R.drawable.ic_widget_circle_checked else R.drawable.ic_widget_circle_unchecked),
             contentDescription = if (completed) "Undo" else "Complete",
-            modifier = GlanceModifier.size(24.dp),
-            colorFilter = if (completed) null else ColorFilter.tint(healthColor),
+            modifier = GlanceModifier.size(22.dp),
+            colorFilter = if (completed) null else ColorFilter.tint(GlanceTheme.colors.outline),
         )
     }
 }
