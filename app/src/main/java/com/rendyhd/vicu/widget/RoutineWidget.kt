@@ -141,11 +141,13 @@ class ToggleRoutineWidgetAction : ActionCallback {
 }
 
 private val healthColor = ColorProvider(day = Color(0xFF247D61), night = Color(0xFF69D6AD))
+private val allDoneTextColor = ColorProvider(day = Color(0x99247D61), night = Color(0xB369D6AD))
+private val allDoneBackgroundColor = ColorProvider(day = Color(0x14247D61), night = Color(0x2469D6AD))
 
 @Composable
 private fun CompactRoutineWidget(state: RoutineWidgetState) {
-    val next = state.occurrences.firstOrNull { it.status == OccurrenceStatus.PENDING }
-        ?: state.occurrences.firstOrNull()
+    val next = state.visibleOccurrences.firstOrNull { it.status == OccurrenceStatus.PENDING }
+        ?: state.visibleOccurrences.firstOrNull()
     Row(
         modifier = GlanceModifier.fillMaxSize().cornerRadius(16.dp)
             .background(GlanceTheme.colors.widgetBackground).padding(14.dp)
@@ -159,8 +161,15 @@ private fun CompactRoutineWidget(state: RoutineWidgetState) {
                 maxLines = 1,
             )
             Text(
-                text = next?.routineName ?: "All clear today",
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                text = when {
+                    state.isAllDone -> "All done for today  ✓"
+                    next != null -> next.routineName
+                    else -> "Nothing scheduled"
+                },
+                style = TextStyle(
+                    color = if (state.isAllDone) allDoneTextColor else GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = 12.sp,
+                ),
                 maxLines = 1,
             )
         }
@@ -170,6 +179,7 @@ private fun CompactRoutineWidget(state: RoutineWidgetState) {
 
 @Composable
 private fun LargeRoutineWidget(state: RoutineWidgetState) {
+    val visibleOccurrences = state.visibleOccurrences
     Column(
         modifier = GlanceModifier.fillMaxSize().cornerRadius(16.dp)
             .background(GlanceTheme.colors.widgetBackground).padding(16.dp),
@@ -189,33 +199,53 @@ private fun LargeRoutineWidget(state: RoutineWidgetState) {
             )
         }
         Spacer(GlanceModifier.height(8.dp))
-        if (state.occurrences.isEmpty()) {
-            Box(GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Nothing scheduled", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 13.sp))
+        when {
+            state.occurrences.isEmpty() -> {
+                Box(GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Nothing scheduled", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 13.sp))
+                }
             }
-        } else {
-            LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                items(
-                    state.occurrences,
-                    itemId = { "${it.key}:${it.status}".hashCode().toLong() },
-                ) { occurrence ->
-                    Row(
-                        modifier = GlanceModifier.fillMaxWidth().padding(vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+
+            state.isAllDone -> {
+                Box(GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = GlanceModifier.cornerRadius(14.dp)
+                            .background(allDoneBackgroundColor)
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        RoutineWidgetCheckbox(occurrence)
-                        Spacer(GlanceModifier.width(10.dp))
-                        Column(modifier = GlanceModifier.defaultWeight()) {
-                            Text(
-                                occurrence.routineName,
-                                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
-                                maxLines = 1,
-                            )
-                            Text(
-                                occurrence.slotLabel,
-                                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
-                                maxLines = 1,
-                            )
+                        Text(
+                            "All done for today  ✓",
+                            style = TextStyle(color = allDoneTextColor, fontSize = 13.sp),
+                        )
+                    }
+                }
+            }
+
+            else -> {
+                LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+                    items(
+                        visibleOccurrences,
+                        itemId = { "${it.key}:${it.status}".hashCode().toLong() },
+                    ) { occurrence ->
+                        Row(
+                            modifier = GlanceModifier.fillMaxWidth().padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RoutineWidgetCheckbox(occurrence)
+                            Spacer(GlanceModifier.width(10.dp))
+                            Column(modifier = GlanceModifier.defaultWeight()) {
+                                Text(
+                                    occurrence.routineName,
+                                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    occurrence.slotLabel,
+                                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp),
+                                    maxLines = 1,
+                                )
+                            }
                         }
                     }
                 }

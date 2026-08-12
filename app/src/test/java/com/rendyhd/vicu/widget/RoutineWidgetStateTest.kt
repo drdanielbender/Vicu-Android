@@ -3,6 +3,8 @@ package com.rendyhd.vicu.widget
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import com.rendyhd.vicu.domain.model.OccurrenceStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoutineWidgetStateTest {
@@ -28,6 +30,32 @@ class RoutineWidgetStateTest {
     }
 
     @Test
+    fun completedOccurrencesAreHiddenFromTheWidgetList() {
+        val completed = item("routine-1", "morning", OccurrenceStatus.COMPLETED)
+        val pending = item("routine-2", "evening")
+        val state = RoutineWidgetState(DATE, listOf(completed, pending))
+
+        assertEquals(listOf(pending), state.visibleOccurrences)
+        assertFalse(state.isAllDone)
+    }
+
+    @Test
+    fun allDoneRequiresAtLeastOneScheduledOccurrenceAndNoVisibleOccurrences() {
+        assertFalse(RoutineWidgetState(date = DATE).isAllDone)
+
+        val state = RoutineWidgetState(
+            DATE,
+            listOf(
+                item("routine-1", "morning", OccurrenceStatus.COMPLETED),
+                item("routine-2", "evening", OccurrenceStatus.COMPLETED),
+            ),
+        )
+
+        assertTrue(state.isAllDone)
+        assertTrue(state.visibleOccurrences.isEmpty())
+    }
+
+    @Test
     fun widgetStateSerializationRoundTrips() {
         val state = RoutineWidgetState(
             date = DATE,
@@ -41,14 +69,18 @@ class RoutineWidgetStateTest {
         assertEquals(state, RoutineWidgetStateDefinition.parseState(prefs))
     }
 
-    private fun item(routineId: String, slotId: String) = RoutineWidgetItem(
+    private fun item(
+        routineId: String,
+        slotId: String,
+        status: OccurrenceStatus = OccurrenceStatus.PENDING,
+    ) = RoutineWidgetItem(
         key = "$routineId:$DATE:$slotId",
         routineId = routineId,
         routineName = "Routine $routineId",
         scheduledDate = DATE,
         slotId = slotId,
         slotLabel = slotId,
-        status = OccurrenceStatus.PENDING,
+        status = status,
     )
 
     private companion object {

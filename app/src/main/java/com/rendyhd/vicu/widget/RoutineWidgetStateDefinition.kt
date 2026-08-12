@@ -29,6 +29,9 @@ data class RoutineWidgetState(
 ) {
     val scheduledCount: Int get() = occurrences.size
     val completedCount: Int get() = occurrences.count { it.status == OccurrenceStatus.COMPLETED }
+    val visibleOccurrences: List<RoutineWidgetItem>
+        get() = occurrences.filterNot { it.status == OccurrenceStatus.COMPLETED }
+    val isAllDone: Boolean get() = occurrences.isNotEmpty() && visibleOccurrences.isEmpty()
 
     fun withStatus(
         routineId: String,
