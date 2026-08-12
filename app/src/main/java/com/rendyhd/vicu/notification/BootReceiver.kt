@@ -6,6 +6,8 @@ import android.content.Intent
 import android.util.Log
 import com.rendyhd.vicu.data.local.NotificationPrefsStore
 import com.rendyhd.vicu.widget.WidgetUpdateScheduler
+import com.rendyhd.vicu.widget.RoutineWidget
+import com.rendyhd.vicu.worker.RoutineMaintenanceScheduler
 import com.rendyhd.vicu.worker.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +37,8 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
                 alarmScheduler.rescheduleAll()
                 alarmScheduler.rescheduleSnoozes()
                 routineAlarmScheduler.rescheduleAll()
+                RoutineMaintenanceScheduler.reschedule(context)
+                RoutineWidget().updateAllWidgets(context)
                 val prefs = prefsStore.getPrefs().first()
                 dailySummaryScheduler.scheduleIfEnabled(
                     prefs.dailySummaryEnabled,
