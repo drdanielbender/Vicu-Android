@@ -21,6 +21,7 @@ import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.DescriptionHtml
 import com.rendyhd.vicu.util.ImageTokens
 import com.rendyhd.vicu.util.NetworkResult
+import com.rendyhd.vicu.util.unfinishedDescendants
 import com.rendyhd.vicu.util.RecurrenceValue
 import com.rendyhd.vicu.util.parser.ParseResult
 import com.rendyhd.vicu.util.parser.ParserConfig
@@ -56,6 +57,7 @@ data class TaskDetailUiState(
     val relations: Map<String, List<Task>> = emptyMap(),
     val attachments: List<Attachment> = emptyList(),
     val showDeleteConfirmation: Boolean = false,
+    val pendingSubtaskCompletion: Task? = null,
     val isDeleted: Boolean = false,
     val inboxProjectId: Long = 0L,
     val isUploadingImage: Boolean = false,
@@ -465,7 +467,25 @@ class TaskDetailViewModel(
         }
     }
 
-    fun toggleSubtaskDone(subtask: Task) {
+    fun requestToggleSubtaskDone(subtask: Task) {
+        if (!subtask.done && subtask.unfinishedDescendants().isNotEmpty()) {
+            _uiState.update { it.copy(pendingSubtaskCompletion = subtask) }
+        } else {
+            toggleSubtaskDone(subtask)
+        }
+    }
+
+    fun confirmSubtaskCompletion() {
+        val subtask = _uiState.value.pendingSubtaskCompletion ?: return
+        _uiState.update { it.copy(pendingSubtaskCompletion = null) }
+        toggleSubtaskDone(subtask)
+    }
+
+    fun dismissSubtaskCompletion() {
+        _uiState.update { it.copy(pendingSubtaskCompletion = null) }
+    }
+
+    private fun toggleSubtaskDone(subtask: Task) {
         val parentId = _uiState.value.task?.id ?: return
         val target = !subtask.done
         // Optimistically flip the checkbox so it responds instantly; the repository also flips
@@ -550,13 +570,13 @@ class TaskDetailViewModel(
     }
 
     /**
-     * Entry point for the trash button. Respects the "Confirm before deleting"
-     * behavior pref — when off, deletes immediately; when on, raises the dialog.
+     * Entry point for the trash button. A task with descendants always gets the
+     * structural choice dialog, even when ordinary delete confirmations are disabled.
      */
     fun requestDeleteTask() {
         viewModelScope.launch {
             val prefs = behaviorPrefsStore.getPrefs().first()
-            if (prefs.confirmBeforeDelete) {
+            if (_uiState.value.subtasks.isNotEmpty() || prefs.confirmBeforeDelete) {
                 _uiState.update { it.copy(showDeleteConfirmation = true) }
             } else {
                 deleteTask()
@@ -568,11 +588,11 @@ class TaskDetailViewModel(
         _uiState.update { it.copy(showDeleteConfirmation = false) }
     }
 
-    fun deleteTask() {
+    fun deleteTask(deleteSubtasks: Boolean = true) {
         val task = _uiState.value.task ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(showDeleteConfirmation = false) }
-            when (val result = taskRepository.delete(task.id)) {
+            when (val result = taskRepository.delete(task.id, deleteSubtasks)) {
                 is NetworkResult.Success -> _uiState.update { it.copy(isDeleted = true) }
                 is NetworkResult.Error -> _uiState.update { it.copy(error = result.message) }
                 else -> {}

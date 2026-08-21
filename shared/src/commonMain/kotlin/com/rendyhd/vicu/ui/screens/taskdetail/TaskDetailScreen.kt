@@ -87,6 +87,7 @@ import com.rendyhd.vicu.ui.components.task.NlpVisualTransformation
 import com.rendyhd.vicu.ui.components.task.ParseChipRow
 import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.DateUtils
+import com.rendyhd.vicu.util.descendantsDepthFirst
 import com.rendyhd.vicu.util.ImageTokens
 import com.rendyhd.vicu.util.ReminderFormat
 import com.rendyhd.vicu.util.parseHexColor
@@ -467,7 +468,7 @@ fun TaskDetailScreen(
                 ) {
                     Checkbox(
                         checked = subtask.done,
-                        onCheckedChange = { viewModel.toggleSubtaskDone(subtask) },
+                        onCheckedChange = { viewModel.requestToggleSubtaskDone(subtask) },
                     )
                     Text(
                         text = subtask.title,
@@ -682,19 +683,56 @@ fun TaskDetailScreen(
 
     // Delete confirmation dialog
     if (state.showDeleteConfirmation) {
+        val descendantCount = state.task?.descendantsDepthFirst()?.size
+            ?.takeIf { it > 0 }
+            ?: state.subtasks.size
+        val hasDescendants = descendantCount > 0
         AlertDialog(
             onDismissRequest = viewModel::dismissDeleteConfirmation,
-            title = { Text("Delete task?") },
-            text = { Text("This action cannot be undone.") },
+            title = { Text(if (hasDescendants) "Delete task and subtasks?" else "Delete task?") },
+            text = {
+                Text(
+                    if (hasDescendants) {
+                        "This task has $descendantCount ${if (descendantCount == 1) "subtask" else "subtasks"}. " +
+                            "Delete them too, or keep them as standalone tasks."
+                    } else {
+                        "This action cannot be undone."
+                    },
+                )
+            },
             confirmButton = {
-                TextButton(onClick = viewModel::deleteTask) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                Row {
+                    if (hasDescendants) {
+                        TextButton(onClick = { viewModel.deleteTask(deleteSubtasks = false) }) {
+                            Text("Keep subtasks")
+                        }
+                    }
+                    TextButton(onClick = { viewModel.deleteTask(deleteSubtasks = true) }) {
+                        Text(if (hasDescendants) "Delete all" else "Delete", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             },
             dismissButton = {
                 TextButton(onClick = viewModel::dismissDeleteConfirmation) {
                     Text("Cancel")
                 }
+            },
+        )
+    }
+
+    state.pendingSubtaskCompletion?.let { subtask ->
+        val count = subtask.descendantsDepthFirst().count { !it.done }
+        AlertDialog(
+            onDismissRequest = viewModel::dismissSubtaskCompletion,
+            title = { Text("Complete task and subtasks?") },
+            text = {
+                Text("This will also complete $count unfinished ${if (count == 1) "subtask" else "subtasks"}.")
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmSubtaskCompletion) { Text("Complete all") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissSubtaskCompletion) { Text("Cancel") }
             },
         )
     }

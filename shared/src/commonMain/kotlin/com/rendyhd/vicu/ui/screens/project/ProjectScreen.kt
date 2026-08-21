@@ -169,6 +169,8 @@ fun ProjectScreen(
                             onClick = {
                                 if (selectionActive) selectionVm.toggle(task.id) else onTaskClick(task.id)
                             },
+                            onSubtaskToggleDone = viewModel::toggleDone,
+                            onSubtaskClick = { child -> onTaskClick(child.id) },
                             onSchedule = { viewModel.scheduleTask(task) },
                             // Draggable rows enter selection via lift-without-move
                             // (onDragStopped above); the rest keep plain long-press.
@@ -250,6 +252,8 @@ private fun LazyItemScope.ReorderableTaskRow(
     onDragStopped: () -> Unit,
     onToggleDone: () -> Unit,
     onClick: () -> Unit,
+    onSubtaskToggleDone: (Task) -> Unit,
+    onSubtaskClick: (Task) -> Unit,
     onSchedule: () -> Unit,
     onLongClick: (() -> Unit)?,
     contentStartPadding: Dp = 0.dp,
@@ -274,6 +278,8 @@ private fun LazyItemScope.ReorderableTaskRow(
                 task = displayTask,
                 onToggleDone = onToggleDone,
                 onClick = onClick,
+                onSubtaskToggleDone = onSubtaskToggleDone,
+                onSubtaskClick = onSubtaskClick,
                 onSchedule = onSchedule,
                 selectionActive = selectionActive,
                 selected = selected,
@@ -352,6 +358,8 @@ private fun LazyListScope.projectSectionItems(
                     onDragStopped = { onDragStopped(task) },
                     onToggleDone = { onToggleDone(task) },
                     onClick = { onRowClick(task) },
+                    onSubtaskToggleDone = onToggleDone,
+                    onSubtaskClick = onRowClick,
                     onSchedule = { onSchedule(task) },
                     onLongClick = if (canDrag) null else ({ onLongClickToggle(task) }),
                     contentStartPadding = ((depth + 1) * 16).dp,

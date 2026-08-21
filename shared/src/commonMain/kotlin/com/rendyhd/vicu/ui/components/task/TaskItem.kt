@@ -1,6 +1,7 @@
 package com.rendyhd.vicu.ui.components.task
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -27,17 +28,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -48,6 +55,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextDecoration
@@ -55,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.data.local.SubtaskDisplayMode
 import com.rendyhd.vicu.ui.theme.PriorityHigh
 import com.rendyhd.vicu.ui.theme.PriorityLow
 import com.rendyhd.vicu.ui.theme.PriorityMedium
@@ -64,6 +73,8 @@ import com.rendyhd.vicu.util.RelationKind
 import com.rendyhd.vicu.util.isRecurring
 import com.rendyhd.vicu.util.TaskLinkParser
 import com.rendyhd.vicu.util.parseHexColor
+import com.rendyhd.vicu.util.subtaskProgress
+import com.rendyhd.vicu.util.unfinishedDescendants
 
 
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -76,8 +87,28 @@ fun TaskItem(
     selectionActive: Boolean = false,
     selected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
+    onSubtaskToggleDone: (Task) -> Unit = {},
+    onSubtaskClick: (Task) -> Unit = {},
+    confirmRootCompletion: Boolean = true,
 ) {
-    val subtaskCount = task.relatedTasks[RelationKind.SUBTASK].orEmpty().size
+    val directSubtasks = task.relatedTasks[RelationKind.SUBTASK].orEmpty()
+    val (completedSubtasks, subtaskCount) = task.subtaskProgress()
+    val displayMode = LocalSubtaskDisplayMode.current
+    var subtasksExpanded by rememberSaveable(task.id) { mutableStateOf(false) }
+    var pendingCompletion by remember { mutableStateOf<Task?>(null) }
+
+    val requestToggle: (Task) -> Unit = { candidate ->
+        val shouldConfirm = !candidate.done &&
+            candidate.unfinishedDescendants().isNotEmpty() &&
+            (candidate.id != task.id || confirmRootCompletion)
+        if (shouldConfirm) {
+            pendingCompletion = candidate
+        } else if (candidate.id == task.id) {
+            onToggleDone()
+        } else {
+            onSubtaskToggleDone(candidate)
+        }
+    }
 
     Column(modifier = modifier) {
         Row(
@@ -99,7 +130,7 @@ fun TaskItem(
             } else {
                 AnimatedCheckbox(
                     done = task.done,
-                    onToggle = onToggleDone,
+                    onToggle = { requestToggle(task) },
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))
@@ -136,6 +167,15 @@ fun TaskItem(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                task.relatedTasks[RelationKind.PARENTTASK].orEmpty().firstOrNull()?.let { parent ->
+                    Text(
+                        text = "Subtask of ${parent.title}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -151,12 +191,35 @@ fun TaskItem(
                     )
                 }
                 if (subtaskCount > 0) {
-                    Icon(
-                        imageVector = Icons.Outlined.Checklist,
-                        contentDescription = "$subtaskCount ${if (subtaskCount == 1) "subtask" else "subtasks"}",
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
+                    Row(
+                        modifier = if (displayMode == SubtaskDisplayMode.EXPANDABLE) {
+                            Modifier.clickable { subtasksExpanded = !subtasksExpanded }
+                        } else {
+                            Modifier
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        if (displayMode == SubtaskDisplayMode.EXPANDABLE) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                contentDescription = if (subtasksExpanded) "Collapse subtasks" else "Expand subtasks",
+                                modifier = Modifier.size(18.dp).rotate(if (subtasksExpanded) 90f else 0f),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Outlined.Checklist,
+                            contentDescription = "$completedSubtasks of $subtaskCount subtasks completed",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                        Text(
+                            text = "$completedSubtasks/$subtaskCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 if (isRecurring(task.repeatAfter, task.repeatMode)) {
                     Icon(
@@ -188,10 +251,138 @@ fun TaskItem(
                 }
             }
         }
+        AnimatedVisibility(
+            visible = displayMode == SubtaskDisplayMode.EXPANDABLE && subtasksExpanded,
+        ) {
+            InlineSubtaskTree(
+                subtasks = directSubtasks,
+                rootProjectId = task.projectId,
+                depth = 1,
+                onToggleDone = requestToggle,
+                onClick = onSubtaskClick,
+            )
+        }
         HorizontalDivider(
             modifier = Modifier.padding(start = 48.dp),
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
         )
+    }
+
+    pendingCompletion?.let { candidate ->
+        val count = candidate.unfinishedDescendants().size
+        AlertDialog(
+            onDismissRequest = { pendingCompletion = null },
+            title = { Text("Complete task and subtasks?") },
+            text = {
+                Text(
+                    "${if (count == 1) "One subtask is" else "$count subtasks are"} still open. " +
+                        "Completing this task will complete ${if (count == 1) "it" else "them"} too.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingCompletion = null
+                        if (candidate.id == task.id) onToggleDone() else onSubtaskToggleDone(candidate)
+                    },
+                ) {
+                    Text("Complete all")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingCompletion = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun InlineSubtaskTree(
+    subtasks: List<Task>,
+    rootProjectId: Long,
+    depth: Int,
+    onToggleDone: (Task) -> Unit,
+    onClick: (Task) -> Unit,
+) {
+    Column {
+        subtasks.forEach { child ->
+            val nested = child.relatedTasks[RelationKind.SUBTASK].orEmpty()
+            val (completed, total) = child.subtaskProgress()
+            var expanded by rememberSaveable(child.id) { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick(child) }
+                    .padding(
+                        start = (28 + depth.coerceAtMost(4) * 20).dp,
+                        end = 16.dp,
+                        top = 8.dp,
+                        bottom = 8.dp,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                AnimatedCheckbox(
+                    done = child.done,
+                    onToggle = { onToggleDone(child) },
+                    modifier = Modifier.size(20.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = child.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (child.done) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        textDecoration = if (child.done) TextDecoration.LineThrough else null,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (child.projectId != 0L && child.projectId != rootProjectId) {
+                        Text(
+                            text = "Different project",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                PriorityDot(priority = child.priority)
+                if (!DateUtils.isNullDate(child.dueDate) && child.dueDate.isNotBlank()) {
+                    TaskDueBadge(dueDate = child.dueDate)
+                }
+                if (total > 0) {
+                    Row(
+                        modifier = Modifier.clickable { expanded = !expanded },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = if (expanded) "Collapse subtasks" else "Expand subtasks",
+                            modifier = Modifier.size(18.dp).rotate(if (expanded) 90f else 0f),
+                        )
+                        Text(
+                            text = "$completed/$total",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            AnimatedVisibility(visible = expanded) {
+                InlineSubtaskTree(
+                    subtasks = nested,
+                    rootProjectId = rootProjectId,
+                    depth = depth + 1,
+                    onToggleDone = onToggleDone,
+                    onClick = onClick,
+                )
+            }
+        }
     }
 }
 

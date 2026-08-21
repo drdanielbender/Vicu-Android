@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -51,6 +53,37 @@ class TaskRepositoryImpl(
     }
 
     private val tempIdCounter = AtomicLong(-(Clock.System.now().epochSeconds))
+    private val completionBatchesMutex = Mutex()
+    private val completionBatches = mutableMapOf<Long, List<DescendantLink>>()
+
+    private data class DescendantLink(
+        val parentId: Long,
+        val task: Task,
+    )
+
+    private suspend fun descendantLinks(root: Task): List<DescendantLink> {
+        val result = mutableListOf<DescendantLink>()
+        val visited = mutableSetOf(root.id)
+
+        suspend fun visit(parent: Task) {
+            val cached = taskDao.getByIdSync(parent.id)?.let { with(taskMapper) { it.toDomain() } }
+            val children = cached?.relatedTasks?.get(RelationKind.SUBTASK)
+                ?.takeIf { it.isNotEmpty() }
+                ?: parent.relatedTasks[RelationKind.SUBTASK].orEmpty()
+            children.forEach { child ->
+                if (visited.add(child.id)) {
+                    val current = taskDao.getByIdSync(child.id)
+                        ?.let { with(taskMapper) { it.toDomain() } }
+                        ?: child
+                    result += DescendantLink(parent.id, current)
+                    visit(current)
+                }
+            }
+        }
+
+        visit(root)
+        return result
+    }
 
     private suspend fun anchorNewTaskAtEnd(projectId: Long, newTaskId: Long) {
         if (projectId <= 0L) return
@@ -311,7 +344,23 @@ class TaskRepositoryImpl(
         }
     }
 
-    override suspend fun delete(taskId: Long): NetworkResult<Unit> {
+    override suspend fun delete(taskId: Long, deleteSubtasks: Boolean): NetworkResult<Unit> {
+        if (deleteSubtasks) {
+            val root = taskDao.getByIdSync(taskId)?.let { with(taskMapper) { it.toDomain() } }
+            if (root != null) {
+                for (link in descendantLinks(root).asReversed()) {
+                    when (val result = deleteSingle(link.task.id)) {
+                        is NetworkResult.Error -> return result
+                        else -> Unit
+                    }
+                }
+            }
+        }
+        completionBatchesMutex.withLock { completionBatches.remove(taskId) }
+        return deleteSingle(taskId)
+    }
+
+    private suspend fun deleteSingle(taskId: Long): NetworkResult<Unit> {
         if (taskId < 0L) {
             platformHooks.cancelAlarm(taskId)
             taskDao.deleteById(taskId)
@@ -366,19 +415,107 @@ class TaskRepositoryImpl(
     }
 
     override suspend fun toggleSubtaskDone(parentTaskId: Long, subtask: Task): NetworkResult<Task> {
+        return toggleTaskTree(subtask, parentTaskId)
+    }
+
+    private suspend fun toggleTaskTree(
+        task: Task,
+        explicitParentId: Long? = null,
+    ): NetworkResult<Task> {
+        val targetDone = !task.done
+        if (!targetDone) {
+            val batch = completionBatchesMutex.withLock { completionBatches.remove(task.id) }.orEmpty()
+            val rootResult = if (explicitParentId != null) {
+                setLinkedTaskDone(explicitParentId, task, targetDone = false, playSound = false)
+            } else {
+                setTaskDone(task, targetDone = false, playSound = false)
+            }
+            if (rootResult !is NetworkResult.Success) return rootResult
+
+            // Restore only descendants that were auto-completed with this parent. Descendants
+            // already completed by the user before the cascade are deliberately left alone.
+            batch.asReversed().forEach { link ->
+                val current = taskDao.getByIdSync(link.task.id)
+                    ?.let { with(taskMapper) { it.toDomain() } }
+                    ?: link.task.copy(done = true)
+                if (current.done) {
+                    val restored = setLinkedTaskDone(
+                        link.parentId,
+                        current,
+                        targetDone = false,
+                        playSound = false,
+                    )
+                    if (restored is NetworkResult.Error) {
+                        Logger.w(TAG, "Could not restore auto-completed subtask ${link.task.id}: ${restored.message}")
+                    }
+                }
+            }
+            return rootResult
+        }
+
+        val autoCompleted = descendantLinks(task).filterNot { it.task.done }
+        val completed = mutableListOf<DescendantLink>()
+        for (link in autoCompleted.asReversed()) {
+            when (val childResult = setLinkedTaskDone(
+                link.parentId,
+                link.task,
+                targetDone = true,
+                playSound = false,
+            )) {
+                is NetworkResult.Success -> completed += link
+                is NetworkResult.Error -> {
+                    rollbackAutoCompleted(completed)
+                    return childResult
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+
+        val rootResult = if (explicitParentId != null) {
+            setLinkedTaskDone(explicitParentId, task, targetDone = true, playSound = true)
+        } else {
+            setTaskDone(task, targetDone = true, playSound = true)
+        }
+        if (rootResult is NetworkResult.Success) {
+            completionBatchesMutex.withLock { completionBatches[task.id] = autoCompleted }
+        } else {
+            rollbackAutoCompleted(completed)
+        }
+        return rootResult
+    }
+
+    private suspend fun rollbackAutoCompleted(completed: List<DescendantLink>) {
+        completed.forEach { link ->
+            val current = taskDao.getByIdSync(link.task.id)
+                ?.let { with(taskMapper) { it.toDomain() } }
+                ?: link.task.copy(done = true)
+            if (current.done) {
+                setLinkedTaskDone(link.parentId, current, targetDone = false, playSound = false)
+            }
+        }
+    }
+
+    private suspend fun setLinkedTaskDone(
+        parentTaskId: Long,
+        subtask: Task,
+        targetDone: Boolean,
+        playSound: Boolean,
+    ): NetworkResult<Task> {
         val cached = taskDao.getByIdSync(subtask.id)
         val current = cached?.let { with(taskMapper) { it.toDomain() } } ?: subtask
+        if (current.done == targetDone) {
+            updateParentDoneReferences(current, targetDone, parentTaskId)
+            return NetworkResult.Success(current)
+        }
         val toggled = current.copy(
-            done = !current.done,
-            doneAt = if (!current.done) DateUtils.nowIso() else "",
+            done = targetDone,
+            doneAt = if (targetDone) DateUtils.nowIso() else "",
         )
-        if (toggled.done) {
+        if (playSound && toggled.done) {
             platformHooks.playCompletionSound()
         }
 
-        taskDao.getByIdSync(parentTaskId)?.let { parent ->
-            taskDao.upsert(with(taskMapper) { parent.withRelatedTaskDone(subtask.id, toggled.done) })
-        }
+        updateParentDoneReferences(current, toggled.done, parentTaskId)
         cached?.let {
             taskDao.upsert(it.copy(done = toggled.done, doneAt = DateUtils.normalizeToUtc(toggled.doneAt)))
         }
@@ -398,10 +535,8 @@ class TaskRepositoryImpl(
             val responseDto = api.updateTask(subtask.id, patch)
             val responseEntity = with(taskMapper) { responseDto.toEntity() }
             taskDao.upsert(responseEntity)
-            taskDao.getByIdSync(parentTaskId)?.let { parent ->
-                taskDao.upsert(with(taskMapper) { parent.withRelatedTaskDone(subtask.id, responseDto.done) })
-            }
             val result = with(taskMapper) { responseEntity.toDomain() }
+            updateParentDoneReferences(result, responseDto.done, parentTaskId)
             if (toggled.done) platformHooks.cancelAlarm(subtask.id) else platformHooks.scheduleAlarm(result)
             platformHooks.updateWidgets()
             NetworkResult.Success(result)
@@ -417,10 +552,30 @@ class TaskRepositoryImpl(
                 NetworkResult.Success(toggled)
             } else {
                 cached?.let { taskDao.upsert(it) }
-                taskDao.getByIdSync(parentTaskId)?.let { parent ->
-                    taskDao.upsert(with(taskMapper) { parent.withRelatedTaskDone(subtask.id, current.done) })
-                }
+                updateParentDoneReferences(current, current.done, parentTaskId)
                 NetworkResult.Error(e.message ?: "Failed to update subtask")
+            }
+        }
+    }
+
+    private suspend fun updateParentDoneReferences(
+        task: Task,
+        done: Boolean,
+        explicitParentId: Long? = null,
+    ) {
+        val parentIds = buildSet {
+            explicitParentId?.let(::add)
+            task.relatedTasks[RelationKind.PARENTTASK].orEmpty().forEach { add(it.id) }
+            taskDao.getByIdSync(task.id)?.let { entity ->
+                with(taskMapper) { entity.toDomain() }
+                    .relatedTasks[RelationKind.PARENTTASK]
+                    .orEmpty()
+                    .forEach { add(it.id) }
+            }
+        }
+        parentIds.forEach { parentId ->
+            taskDao.getByIdSync(parentId)?.let { parent ->
+                taskDao.upsert(with(taskMapper) { parent.withRelatedTaskDone(task.id, done) })
             }
         }
     }
@@ -478,11 +633,22 @@ class TaskRepositoryImpl(
     }
 
     override suspend fun toggleDone(task: Task): NetworkResult<Task> {
+        return toggleTaskTree(task)
+    }
+
+    private suspend fun setTaskDone(
+        task: Task,
+        targetDone: Boolean,
+        playSound: Boolean,
+    ): NetworkResult<Task> {
+        val cached = taskDao.getByIdSync(task.id)?.let { with(taskMapper) { it.toDomain() } }
+        val current = cached ?: task
         val toggled = task.copy(
-            done = !task.done,
-            doneAt = if (!task.done) DateUtils.nowIso() else "",
+            relatedTasks = current.relatedTasks.ifEmpty { task.relatedTasks },
+            done = targetDone,
+            doneAt = if (targetDone) DateUtils.nowIso() else "",
         )
-        if (toggled.done) {
+        if (playSound && toggled.done) {
             platformHooks.playCompletionSound()
         }
         val patch = MergePatches.taskDone(toggled.done)
@@ -494,6 +660,7 @@ class TaskRepositoryImpl(
                 "toggle_done",
                 queuedUpdatePayload(toggled, patch),
             )
+            updateParentDoneReferences(toggled, toggled.done)
             if (toggled.done) platformHooks.cancelAlarm(task.id)
             platformHooks.updateWidgets()
             return NetworkResult.Success(toggled)
@@ -502,6 +669,7 @@ class TaskRepositoryImpl(
             val responseDto = api.updateTask(task.id, patch)
             val responseEntity = with(taskMapper) { responseDto.toEntity() }
             val result = with(taskMapper) { responseEntity.toDomain() }
+            updateParentDoneReferences(toggled, responseDto.done)
             if (toggled.done) {
                 platformHooks.cancelAlarm(task.id)
             } else {
@@ -519,6 +687,7 @@ class TaskRepositoryImpl(
                     "toggle_done",
                     queuedUpdatePayload(toggled, patch),
                 )
+                updateParentDoneReferences(toggled, toggled.done)
                 if (toggled.done) {
                     platformHooks.cancelAlarm(task.id)
                 }

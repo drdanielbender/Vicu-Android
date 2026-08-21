@@ -51,6 +51,7 @@ import com.rendyhd.vicu.ui.components.shared.IconRegistry
 import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
 import com.rendyhd.vicu.ui.components.shared.OfflineBanner
 import com.rendyhd.vicu.ui.components.task.TaskEntrySheet
+import com.rendyhd.vicu.ui.components.task.LocalSubtaskDisplayMode
 import com.rendyhd.vicu.ui.navigation.AnytimeRoute
 import com.rendyhd.vicu.ui.navigation.AppNavHost
 import com.rendyhd.vicu.ui.navigation.CustomListRoute
@@ -326,6 +327,7 @@ fun VicuApp(
     val drawerViewModel: DrawerViewModel = koinViewModel()
     val drawerUiState by drawerViewModel.uiState.collectAsStateWithLifecycle()
     val fabAlignStart by drawerViewModel.fabAlignStart.collectAsStateWithLifecycle()
+    val subtaskDisplayMode by drawerViewModel.subtaskDisplayMode.collectAsStateWithLifecycle()
 
     // Build dynamic bottom bar items from config
     val bottomNavItems = remember(drawerUiState.bottomBarSlots, drawerUiState.allProjects, drawerUiState.customLists) {
@@ -429,7 +431,10 @@ fun VicuApp(
                     )
                 }
                 val navHostModifier = Modifier.weight(1f)
-                CompositionLocalProvider(LocalFabAlignStart provides fabAlignStart) {
+                CompositionLocalProvider(
+                    LocalFabAlignStart provides fabAlignStart,
+                    LocalSubtaskDisplayMode provides subtaskDisplayMode,
+                ) {
                     AppNavHost(
                         navController = navController,
                         onOpenDrawer = { scope.launch { drawerState.open() } },

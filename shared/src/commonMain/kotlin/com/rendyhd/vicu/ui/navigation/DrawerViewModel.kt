@@ -69,6 +69,16 @@ class DrawerViewModel(
         .map { it.fabAlignStart }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    /** Exposed for the app-root CompositionLocal that controls inline subtask rendering. */
+    val subtaskDisplayMode: StateFlow<com.rendyhd.vicu.data.local.SubtaskDisplayMode> =
+        behaviorPrefsStore.getPrefs()
+            .map { it.subtaskDisplayMode }
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                com.rendyhd.vicu.data.local.SubtaskDisplayMode.INSIDE_TASK,
+            )
+
     private val _sectionsExpanded = MutableStateFlow(
         Triple(true, true, true), // projects, lists, tags
     )

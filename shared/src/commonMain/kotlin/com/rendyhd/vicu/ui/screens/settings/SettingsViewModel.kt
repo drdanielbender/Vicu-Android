@@ -17,6 +17,7 @@ import com.rendyhd.vicu.data.local.ReviewPrefs
 import com.rendyhd.vicu.data.local.ReviewPrefsStore
 import com.rendyhd.vicu.data.local.ThemeMode
 import com.rendyhd.vicu.data.local.ThemePrefsStore
+import com.rendyhd.vicu.data.local.SubtaskDisplayMode
 import com.rendyhd.vicu.data.local.WidgetPrefsStore
 import com.rendyhd.vicu.util.parser.ParserConfig
 import com.rendyhd.vicu.util.parser.SyntaxMode
@@ -550,6 +551,10 @@ class SettingsViewModel(
 
     fun setFabAlignStart(enabled: Boolean) {
         viewModelScope.launch { behaviorPrefsStore.setFabAlignStart(enabled) }
+    }
+
+    fun setSubtaskDisplayMode(mode: SubtaskDisplayMode) {
+        viewModelScope.launch { behaviorPrefsStore.setSubtaskDisplayMode(mode) }
     }
 
     fun setLogbookRetentionEnabled(enabled: Boolean) {

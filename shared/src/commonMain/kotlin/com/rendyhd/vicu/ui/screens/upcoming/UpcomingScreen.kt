@@ -136,6 +136,8 @@ fun UpcomingScreen(
                                             onTaskClick(task.id)
                                         }
                                     },
+                                    onSubtaskToggleDone = viewModel::toggleDone,
+                                    onSubtaskClick = { child -> onTaskClick(child.id) },
                                     onSchedule = { viewModel.scheduleTask(task) },
                                     selectionActive = selectionActive,
                                     selected = task.id in selectedIds,

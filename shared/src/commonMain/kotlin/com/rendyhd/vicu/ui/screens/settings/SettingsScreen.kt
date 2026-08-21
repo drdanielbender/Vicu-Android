@@ -280,6 +280,7 @@ fun SettingsScreen(
                     onSetScheduleAction = viewModel::setScheduleAction,
                     onSetKeepEntryOpen = viewModel::setKeepEntryOpen,
                     onSetFabAlignStart = viewModel::setFabAlignStart,
+                    onSetSubtaskDisplayMode = viewModel::setSubtaskDisplayMode,
                     useDeviceColors = useDeviceColors,
                     onSetUseDeviceColors = viewModel::setUseDeviceColors,
                     onSetLogbookRetentionEnabled = viewModel::setLogbookRetentionEnabled,
@@ -853,6 +854,7 @@ private fun GeneralTab(
     onSetScheduleAction: (com.rendyhd.vicu.data.local.ScheduleAction) -> Unit,
     onSetKeepEntryOpen: (Boolean) -> Unit,
     onSetFabAlignStart: (Boolean) -> Unit,
+    onSetSubtaskDisplayMode: (com.rendyhd.vicu.data.local.SubtaskDisplayMode) -> Unit,
     useDeviceColors: Boolean,
     onSetUseDeviceColors: (Boolean) -> Unit,
     onSetLogbookRetentionEnabled: (Boolean) -> Unit,
@@ -1292,6 +1294,38 @@ private fun GeneralTab(
                 checked = state.behaviorPrefs.confirmBeforeDelete,
                 onCheckedChange = onSetConfirmBeforeDelete,
             )
+        }
+
+        item(key = "subtask_display_mode") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(text = "Subtasks in task lists", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = "Keep lists minimal or expand subtasks beneath their parent",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                @OptIn(ExperimentalMaterial3Api::class)
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    val options = listOf(
+                        com.rendyhd.vicu.data.local.SubtaskDisplayMode.INSIDE_TASK to "Inside task",
+                        com.rendyhd.vicu.data.local.SubtaskDisplayMode.EXPANDABLE to "Expandable",
+                    )
+                    options.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = state.behaviorPrefs.subtaskDisplayMode == mode,
+                            onClick = { onSetSubtaskDisplayMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                        ) {
+                            Text(label)
+                        }
+                    }
+                }
+            }
         }
 
         item(key = "keep_entry_open") {

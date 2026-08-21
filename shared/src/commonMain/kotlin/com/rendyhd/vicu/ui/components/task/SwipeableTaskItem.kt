@@ -16,12 +16,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -43,6 +46,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.util.unfinishedDescendants
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,8 +62,19 @@ fun SwipeableTaskItem(
     selectionActive: Boolean = false,
     selected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
+    onSubtaskToggleDone: (Task) -> Unit = {},
+    onSubtaskClick: (Task) -> Unit = {},
 ) {
     val haptic = LocalHapticFeedback.current
+    var showCompletionConfirmation by remember { mutableStateOf(false) }
+    val unfinishedSubtaskCount = task.unfinishedDescendants().size
+    val requestToggleDone = {
+        if (!task.done && unfinishedSubtaskCount > 0) {
+            showCompletionConfirmation = true
+        } else {
+            onToggleDone()
+        }
+    }
 
     // SwipeToDismissBox commits on fling velocity regardless of positionalThreshold, so a
     // quick flick could still trigger below the 50% mark. Track the live offset (Ref dance:
@@ -79,7 +94,7 @@ fun SwipeableTaskItem(
                 ?: 0f
             if (draggedFraction >= 0.5f) {
                 when (value) {
-                    SwipeToDismissBoxValue.StartToEnd -> onToggleDone()
+                    SwipeToDismissBoxValue.StartToEnd -> requestToggleDone()
                     SwipeToDismissBoxValue.EndToStart -> onSchedule()
                     SwipeToDismissBoxValue.Settled -> {}
                 }
@@ -105,13 +120,26 @@ fun SwipeableTaskItem(
     if (!enabled || selectionActive) {
         TaskItem(
             task = task,
-            onToggleDone = onToggleDone,
+            onToggleDone = requestToggleDone,
             onClick = onClick,
             modifier = modifier.padding(start = contentStartPadding),
             selectionActive = selectionActive,
             selected = selected,
             onLongClick = onLongClick,
+            onSubtaskToggleDone = onSubtaskToggleDone,
+            onSubtaskClick = onSubtaskClick,
+            confirmRootCompletion = false,
         )
+        if (showCompletionConfirmation) {
+            CompletionConfirmationDialog(
+                unfinishedSubtaskCount = unfinishedSubtaskCount,
+                onConfirm = {
+                    showCompletionConfirmation = false
+                    onToggleDone()
+                },
+                onDismiss = { showCompletionConfirmation = false },
+            )
+        }
         return
     }
 
@@ -151,12 +179,51 @@ fun SwipeableTaskItem(
     ) {
         TaskItem(
             task = task,
-            onToggleDone = onToggleDone,
+            onToggleDone = requestToggleDone,
             onClick = onClick,
             modifier = Modifier.padding(start = contentStartPadding),
             onLongClick = onLongClick,
+            onSubtaskToggleDone = onSubtaskToggleDone,
+            onSubtaskClick = onSubtaskClick,
+            confirmRootCompletion = false,
         )
     }
+
+    if (showCompletionConfirmation) {
+        CompletionConfirmationDialog(
+            unfinishedSubtaskCount = unfinishedSubtaskCount,
+            onConfirm = {
+                showCompletionConfirmation = false
+                onToggleDone()
+            },
+            onDismiss = { showCompletionConfirmation = false },
+        )
+    }
+}
+
+@Composable
+private fun CompletionConfirmationDialog(
+    unfinishedSubtaskCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Complete task and subtasks?") },
+        text = {
+            Text(
+                "${if (unfinishedSubtaskCount == 1) "One subtask is" else "$unfinishedSubtaskCount subtasks are"} " +
+                    "still open. Completing this task will complete " +
+                    "${if (unfinishedSubtaskCount == 1) "it" else "them"} too.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Complete all") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable

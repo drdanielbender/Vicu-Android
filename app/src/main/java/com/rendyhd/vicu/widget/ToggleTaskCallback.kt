@@ -6,16 +6,11 @@ import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.state.updateAppWidgetState
-import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.local.dao.TaskDao
-import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
-import com.rendyhd.vicu.data.remote.api.MergePatches
-import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.repository.TaskRepository
 import com.rendyhd.vicu.notification.AlarmScheduler
-import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.worker.SyncScheduler
-import kotlinx.serialization.json.Json
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 
@@ -36,30 +31,15 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
 
         val taskDao = get<TaskDao>()
         val taskMapper = get<TaskMapper>()
+        val taskRepository = get<TaskRepository>()
         val alarmScheduler = get<AlarmScheduler>()
-        val pendingActionDao = get<PendingActionDao>()
-        val json = get<Json>()
 
         try {
             val entity = taskDao.getByIdSync(taskId) ?: return
             val task = with(taskMapper) { entity.toDomain() }
-            val toggled = task.copy(done = true, doneAt = DateUtils.nowIso())
-            val patch = MergePatches.taskDone(done = true)
-            val queuedPayload = if (taskId < 0L) {
-                json.encodeToString(Task.serializer(), toggled)
-            } else {
-                json.encodeToString(
-                    kotlinx.serialization.json.JsonObject.serializer(),
-                    patch,
-                )
-            }
+            taskRepository.toggleDone(task)
 
-            // 1. Optimistic local update (Room)
-            val dto = with(taskMapper) { toggled.toDto() }
-            val optimisticEntity = with(taskMapper) { dto.toEntity() }
-            taskDao.upsert(optimisticEntity)
-
-            // 2. Immediately update this widget's Glance state (remove the task)
+            // Immediately update this widget's Glance state (remove the task)
             updateAppWidgetState(
                 context,
                 TaskWidgetStateDefinition,
@@ -77,18 +57,8 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
             }
             TaskListWidget().update(context, glanceId)
 
-            // 3. Queue pending action for background sync
-            val action = PendingActionEntity(
-                entityType = "task",
-                entityId = taskId,
-                actionType = "toggle_done",
-                payload = queuedPayload,
-                createdAt = DateUtils.nowIso(),
-                updatedAt = DateUtils.nowIso(),
-            )
-            pendingActionDao.queueTaskActionMerging(action)
-
-            // 4. Cancel reminders + schedule background sync
+            // Cancel reminders + schedule background sync. The repository owns
+            // the recursive completion and offline action queue.
             alarmScheduler.cancelForTask(taskId)
             SyncScheduler.enqueueImmediate(context)
         } catch (e: Exception) {

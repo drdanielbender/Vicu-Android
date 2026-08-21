@@ -25,7 +25,8 @@ interface TaskRepository {
     suspend fun moveToProject(taskId: Long, newProjectId: Long): NetworkResult<Unit>
     /** Manual reorder: optimistic local position write + best-effort remote view-position POST. */
     suspend fun updatePosition(taskId: Long, projectId: Long, newPosition: Double)
-    suspend fun delete(taskId: Long): NetworkResult<Unit>
+    /** Deletes a task. Descendants are deleted by default so they cannot be silently promoted. */
+    suspend fun delete(taskId: Long, deleteSubtasks: Boolean = true): NetworkResult<Unit>
     suspend fun toggleDone(task: Task): NetworkResult<Task>
     suspend fun createSubtask(parentTaskId: Long, subtask: Task): NetworkResult<Task>
     suspend fun toggleSubtaskDone(parentTaskId: Long, subtask: Task): NetworkResult<Task>

@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.map
 /** What the swipe-"schedule" and multi-select "Schedule" actions do to a task. */
 enum class ScheduleAction { DUE_TODAY, PRIORITY_URGENT }
 
+/** Controls whether subtasks stay in task details or can expand inline in task lists. */
+enum class SubtaskDisplayMode { INSIDE_TASK, EXPANDABLE }
+
 data class BehaviorPrefs(
     val completionSoundEnabled: Boolean = false,
     val completionSoundUri: String? = null,
@@ -24,6 +27,7 @@ data class BehaviorPrefs(
     val scheduleAction: ScheduleAction = ScheduleAction.DUE_TODAY,
     val keepEntryOpen: Boolean = false,
     val fabAlignStart: Boolean = false,
+    val subtaskDisplayMode: SubtaskDisplayMode = SubtaskDisplayMode.INSIDE_TASK,
 )
 
 class BehaviorPrefsStore(
@@ -37,6 +41,7 @@ class BehaviorPrefsStore(
         private val KEY_SCHEDULE_ACTION = stringPreferencesKey("schedule_action")
         private val KEY_KEEP_ENTRY_OPEN = booleanPreferencesKey("keep_entry_open")
         private val KEY_FAB_ALIGN_START = booleanPreferencesKey("fab_align_start")
+        private val KEY_SUBTASK_DISPLAY_MODE = stringPreferencesKey("subtask_display_mode")
     }
 
     fun getPrefs(): Flow<BehaviorPrefs> =
@@ -51,6 +56,9 @@ class BehaviorPrefsStore(
                     ?: ScheduleAction.DUE_TODAY,
                 keepEntryOpen = prefs[KEY_KEEP_ENTRY_OPEN] ?: false,
                 fabAlignStart = prefs[KEY_FAB_ALIGN_START] ?: false,
+                subtaskDisplayMode = prefs[KEY_SUBTASK_DISPLAY_MODE]
+                    ?.let { runCatching { SubtaskDisplayMode.valueOf(it) }.getOrNull() }
+                    ?: SubtaskDisplayMode.INSIDE_TASK,
             )
         }
 
@@ -83,5 +91,9 @@ class BehaviorPrefsStore(
 
     suspend fun setFabAlignStart(enabled: Boolean) {
         dataStore.edit { it[KEY_FAB_ALIGN_START] = enabled }
+    }
+
+    suspend fun setSubtaskDisplayMode(mode: SubtaskDisplayMode) {
+        dataStore.edit { it[KEY_SUBTASK_DISPLAY_MODE] = mode.name }
     }
 }

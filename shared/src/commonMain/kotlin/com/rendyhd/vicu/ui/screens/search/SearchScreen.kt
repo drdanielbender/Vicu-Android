@@ -128,6 +128,8 @@ fun SearchScreen(
                             }
                         },
                         onClick = { onTaskClick(task.id) },
+                        onSubtaskToggleDone = viewModel::toggleDone,
+                        onSubtaskClick = { child -> onTaskClick(child.id) },
                     )
                 }
             }

@@ -27,6 +27,26 @@ fun SelectionPickers(
     selectedCount: Int,
     onDismiss: () -> Unit,
 ) {
+    val pendingCompletionCount by selectionVm.pendingCompletionDescendantCount.collectAsState()
+    if (pendingCompletionCount != null) {
+        val count = pendingCompletionCount ?: 0
+        AlertDialog(
+            onDismissRequest = selectionVm::dismissBulkComplete,
+            title = { Text("Complete tasks and subtasks?") },
+            text = {
+                Text("This will also complete $count unfinished ${if (count == 1) "subtask" else "subtasks"}.")
+            },
+            confirmButton = {
+                TextButton(onClick = selectionVm::confirmBulkComplete) { Text("Complete all") }
+            },
+            dismissButton = {
+                TextButton(onClick = selectionVm::dismissBulkComplete) { Text("Cancel") }
+            },
+        )
+        return
+    }
+
+    val selectedDescendantCount by selectionVm.selectedDescendantCount.collectAsState()
     when (action) {
         SelectionAction.SCHEDULE -> VicuDatePickerDialog(
             currentDate = null,
@@ -67,10 +87,16 @@ fun SelectionPickers(
 
         SelectionAction.REMOVE -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Remove selected tasks?") },
+            title = {
+                Text(if (selectedDescendantCount > 0) "Open parent task to remove" else "Remove selected tasks?")
+            },
             text = {
                 Text(
-                    if (selectedCount == 1) {
+                    if (selectedDescendantCount > 0) {
+                        "The selection includes a parent task with $selectedDescendantCount nested " +
+                            "${if (selectedDescendantCount == 1) "subtask" else "subtasks"}. " +
+                            "Open the parent to choose whether to delete or keep them."
+                    } else if (selectedCount == 1) {
                         "This task will be permanently removed."
                     } else {
                         "$selectedCount tasks will be permanently removed."
@@ -80,15 +106,17 @@ fun SelectionPickers(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        selectionVm.bulkRemove()
+                        if (selectedDescendantCount == 0) selectionVm.bulkRemove()
                         onDismiss()
                     },
                 ) {
-                    Text("Remove")
+                    Text(if (selectedDescendantCount > 0) "Close" else "Remove")
                 }
             },
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+            dismissButton = if (selectedDescendantCount == 0) {
+                { TextButton(onClick = onDismiss) { Text("Cancel") } }
+            } else {
+                null
             },
         )
 

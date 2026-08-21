@@ -6,21 +6,15 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.rendyhd.vicu.auth.AuthManager
-import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.local.dao.TaskDao
-import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.TaskMapper
-import com.rendyhd.vicu.data.remote.api.MergePatches
-import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.data.remote.BaseUrlHolder
-import com.rendyhd.vicu.domain.model.Task
-import com.rendyhd.vicu.util.DateUtils
+import com.rendyhd.vicu.domain.repository.TaskRepository
 import com.rendyhd.vicu.widget.WidgetUpdateScheduler
 import com.rendyhd.vicu.worker.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -34,10 +28,8 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
 
     private val taskDao: TaskDao by inject()
     private val taskMapper: TaskMapper by inject()
-    private val api: VikunjaApiService by inject()
     private val alarmScheduler: AlarmScheduler by inject()
-    private val pendingActionDao: PendingActionDao by inject()
-    private val json: Json by inject()
+    private val taskRepository: TaskRepository by inject()
     private val baseUrlHolder: BaseUrlHolder by inject()
     private val authManager: AuthManager by inject()
 
@@ -65,53 +57,8 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
 
                 val entity = taskDao.getByIdSync(taskId) ?: return@launch
                 val task = with(taskMapper) { entity.toDomain() }
-                val toggled = task.copy(done = true, doneAt = DateUtils.nowIso())
-                val dto = with(taskMapper) { toggled.toDto() }
-                val patch = MergePatches.taskDone(done = true)
-                val queuedPayload = if (taskId < 0L) {
-                    json.encodeToString(Task.serializer(), toggled)
-                } else {
-                    json.encodeToString(
-                        kotlinx.serialization.json.JsonObject.serializer(),
-                        patch,
-                    )
-                }
-
-                // Optimistic local update
-                val optimisticEntity = with(taskMapper) { dto.toEntity() }
-                taskDao.upsert(optimisticEntity)
-
-                // Remote update
-                if (taskId < 0L) {
-                    val action = PendingActionEntity(
-                        entityType = "task",
-                        entityId = taskId,
-                        actionType = "toggle_done",
-                        payload = queuedPayload,
-                        createdAt = DateUtils.nowIso(),
-                        updatedAt = DateUtils.nowIso(),
-                    )
-                    pendingActionDao.queueTaskActionMerging(action)
-                    SyncScheduler.enqueueWhenOnline(context)
-                } else {
-                    try {
-                        val responseDto = api.updateTask(taskId, patch)
-                        val responseEntity = with(taskMapper) { responseDto.toEntity() }
-                        taskDao.upsert(responseEntity)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Remote complete failed for task $taskId, queuing for sync", e)
-                        val action = PendingActionEntity(
-                            entityType = "task",
-                            entityId = taskId,
-                            actionType = "toggle_done",
-                            payload = queuedPayload,
-                            createdAt = DateUtils.nowIso(),
-                            updatedAt = DateUtils.nowIso(),
-                        )
-                        pendingActionDao.queueTaskActionMerging(action)
-                        SyncScheduler.enqueueWhenOnline(context)
-                    }
-                }
+                taskRepository.toggleDone(task)
+                SyncScheduler.enqueueWhenOnline(context)
 
                 alarmScheduler.cancelForTask(taskId)
                 WidgetUpdateScheduler.enqueueImmediateUpdateAll(context)

@@ -72,9 +72,11 @@ fun LogbookScreen(
                                 } else {
                                     viewModel.toggleDone(task)
                                 }
-                            },
-                            onClick = { onTaskClick(task.id) },
-                            modifier = Modifier.animateItem(),
+                        },
+                        onClick = { onTaskClick(task.id) },
+                        onSubtaskToggleDone = viewModel::toggleDone,
+                        onSubtaskClick = { child -> onTaskClick(child.id) },
+                        modifier = Modifier.animateItem(),
                         )
                     }
                 }
