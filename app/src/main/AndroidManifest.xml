@@ -97,7 +97,14 @@
             </intent-filter>
         </receiver>
 
-        <!-- Stateless Quick Settings action for opening task entry. -->
+        <!--
+            Stateless Quick Settings action for opening task entry.
+
+            Keep this in standard (non-active) listening mode. SystemUI will then
+            call onStartListening whenever the tile becomes visible, allowing the
+            service to republish an available state after process death, package
+            replacement, reboot, or a transient bind failure.
+        -->
         <service
             android:name=".quicksettings.QuickAddTileService"
             android:exported="true"
@@ -107,9 +114,6 @@
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
-            <meta-data
-                android:name="android.service.quicksettings.ACTIVE_TILE"
-                android:value="true" />
         </service>
 
         <!-- Widget -->
