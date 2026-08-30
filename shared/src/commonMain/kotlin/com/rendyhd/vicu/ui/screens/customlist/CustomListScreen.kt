@@ -7,18 +7,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +52,7 @@ fun CustomListScreen(
     onOpenDrawer: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onShowTaskEntry: (Long?, String?) -> Unit = { _, _ -> },
+    onListDeleted: () -> Unit = {},
     viewModel: CustomListViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -55,6 +60,7 @@ fun CustomListScreen(
     val labels by viewModel.labels.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     val selectionVm: SelectionViewModel = koinViewModel()
@@ -85,6 +91,16 @@ fun CustomListScreen(
                     extraActions = {
                         IconButton(onClick = { showEditDialog = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit list")
+                        }
+                        IconButton(
+                            onClick = { showDeleteConfirmation = true },
+                            enabled = state.customList != null,
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete list",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
                         }
                     },
                 )
@@ -158,6 +174,10 @@ fun CustomListScreen(
         }
     }
 
+    LaunchedEffect(state.isDeleted) {
+        if (state.isDeleted) onListDeleted()
+    }
+
     SelectionPickers(
         selectionVm = selectionVm,
         action = selectionAction,
@@ -177,6 +197,29 @@ fun CustomListScreen(
             },
             onDismiss = { showEditDialog = false },
             inboxProjectId = state.inboxProjectId,
+        )
+    }
+
+    if (showDeleteConfirmation && state.customList != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete List") },
+            text = { Text("Delete \"${state.customList!!.name}\"?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        viewModel.deleteCustomList()
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
         )
     }
 }

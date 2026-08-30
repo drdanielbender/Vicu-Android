@@ -34,6 +34,7 @@ data class CustomListUiState(
     val tasks: List<Task> = emptyList(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
+    val isDeleted: Boolean = false,
     val error: String? = null,
     val completedTaskIds: Set<Long> = emptySet(),
     val inboxProjectId: Long = 0L,
@@ -177,6 +178,18 @@ class CustomListViewModel(
     fun saveCustomList(customList: CustomList) {
         viewModelScope.launch {
             customListStore.save(customList)
+        }
+    }
+
+    fun deleteCustomList() {
+        viewModelScope.launch {
+            try {
+                customListStore.delete(listId)
+                _uiState.update { it.copy(isDeleted = true) }
+            } catch (e: Exception) {
+                Log.e("CustomListViewModel", "deleteCustomList() failed: ${e.message}", e)
+                _uiState.update { it.copy(error = e.message ?: "Failed to delete list") }
+            }
         }
     }
 

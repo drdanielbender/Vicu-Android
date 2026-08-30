@@ -126,6 +126,11 @@ fun AppNavHost(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSearch = onNavigateToSearch,
                 onShowTaskEntry = onShowTaskEntry,
+                onListDeleted = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(InboxRoute) { launchSingleTop = true }
+                    }
+                },
             )
         }
         composable<SearchRoute> {
