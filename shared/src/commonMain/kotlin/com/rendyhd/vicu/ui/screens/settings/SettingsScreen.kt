@@ -281,6 +281,7 @@ fun SettingsScreen(
                     onSetKeepEntryOpen = viewModel::setKeepEntryOpen,
                     onSetFabAlignStart = viewModel::setFabAlignStart,
                     onSetSubtaskDisplayMode = viewModel::setSubtaskDisplayMode,
+                    onSetSubprojectDisplayMode = viewModel::setSubprojectDisplayMode,
                     useDeviceColors = useDeviceColors,
                     onSetUseDeviceColors = viewModel::setUseDeviceColors,
                     onSetLogbookRetentionEnabled = viewModel::setLogbookRetentionEnabled,
@@ -855,6 +856,7 @@ private fun GeneralTab(
     onSetKeepEntryOpen: (Boolean) -> Unit,
     onSetFabAlignStart: (Boolean) -> Unit,
     onSetSubtaskDisplayMode: (com.rendyhd.vicu.data.local.SubtaskDisplayMode) -> Unit,
+    onSetSubprojectDisplayMode: (com.rendyhd.vicu.data.local.SubprojectDisplayMode) -> Unit,
     useDeviceColors: Boolean,
     onSetUseDeviceColors: (Boolean) -> Unit,
     onSetLogbookRetentionEnabled: (Boolean) -> Unit,
@@ -1319,6 +1321,38 @@ private fun GeneralTab(
                         SegmentedButton(
                             selected = state.behaviorPrefs.subtaskDisplayMode == mode,
                             onClick = { onSetSubtaskDisplayMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                        ) {
+                            Text(label)
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "subproject_display_mode") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(text = "Subprojects in project views", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = "Combine child tasks into sections or open each child as its own project",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                @OptIn(ExperimentalMaterial3Api::class)
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    val options = listOf(
+                        com.rendyhd.vicu.data.local.SubprojectDisplayMode.SECTIONS to "Sections",
+                        com.rendyhd.vicu.data.local.SubprojectDisplayMode.PROJECT_ROWS to "Project rows",
+                    )
+                    options.forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
+                            selected = state.behaviorPrefs.subprojectDisplayMode == mode,
+                            onClick = { onSetSubprojectDisplayMode(mode) },
                             shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                         ) {
                             Text(label)

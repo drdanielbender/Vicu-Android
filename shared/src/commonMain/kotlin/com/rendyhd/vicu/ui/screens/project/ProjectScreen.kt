@@ -2,17 +2,25 @@ package com.rendyhd.vicu.ui.screens.project
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -29,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -36,6 +45,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
+import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.ui.components.section.CollapsibleSection
 import com.rendyhd.vicu.ui.components.selection.SelectionAction
@@ -61,6 +71,7 @@ fun ProjectScreen(
     onOpenDrawer: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onShowTaskEntry: (Long?, String?) -> Unit = { _, _ -> },
+    onProjectClick: (Long) -> Unit = {},
     viewModel: ProjectViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -126,7 +137,9 @@ fun ProjectScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            val allEmpty = state.unsectionedTasks.isEmpty() && !hasAnyTask(state.sections)
+            val allEmpty = state.unsectionedTasks.isEmpty() &&
+                state.childProjects.isEmpty() &&
+                !hasAnyTask(state.sections)
 
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 if (allEmpty && !state.isLoading) {
@@ -178,16 +191,23 @@ fun ProjectScreen(
                         )
                     }
 
-                    // Add-task affordance for the parent project. Shown only when the project
-                    // has sub-projects (sections): it then adds to the parent specifically,
-                    // alongside the per-section add rows. With no sub-projects it would merely
-                    // duplicate the FAB, so it is omitted and the FAB covers adding.
-                    if (state.sections.isNotEmpty()) {
+                    // Add-task affordance for the parent project. Shown only when it has child
+                    // projects, so adding directly to the parent stays distinct from opening a
+                    // child row or using a section's add action. With no children the FAB covers it.
+                    if (state.sections.isNotEmpty() || state.childProjects.isNotEmpty()) {
                         item(key = "add_task_parent") {
                             AddTaskButton(
                                 onClick = { onShowTaskEntry(projectId, null) },
                             )
                         }
+                    }
+
+                    items(state.childProjects, key = { "subproject_${it.id}" }) { project ->
+                        SubprojectRow(
+                            project = project,
+                            enabled = !selectionActive,
+                            onClick = { onProjectClick(project.id) },
+                        )
                     }
 
                     // Sections (child projects) — recursive renderer handles arbitrary nesting
@@ -238,6 +258,41 @@ fun ProjectScreen(
         selectedCount = selectedIds.size,
         onDismiss = { selectionAction = null },
     )
+}
+
+@Composable
+private fun SubprojectRow(
+    project: Project,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Folder,
+            contentDescription = null,
+            tint = parseSectionColor(project.hexColor)
+                ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = project.title,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.Outlined.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
 }
 
 @Composable

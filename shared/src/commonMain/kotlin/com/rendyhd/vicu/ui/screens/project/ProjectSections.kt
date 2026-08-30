@@ -34,6 +34,10 @@ fun collectDescendants(rootId: Long, projects: List<Project>): List<Project> {
     return result
 }
 
+/** Direct child projects of [rootId], ordered by their position in Vikunja. */
+fun directChildProjects(rootId: Long, projects: List<Project>): List<Project> =
+    projects.filter { it.parentProjectId == rootId }.sortedBy { it.position }
+
 /**
  * Nested section tree for the direct children of [rootId] (recursively). Children are ordered
  * by position; each node's tasks come from [tasksByProject] (already filtered to undone and

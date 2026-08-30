@@ -106,6 +106,11 @@ fun AppNavHost(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSearch = onNavigateToSearch,
                 onShowTaskEntry = onShowTaskEntry,
+                onProjectClick = { childProjectId ->
+                    navController.navigate(ProjectRoute(childProjectId)) {
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable<TagRoute> { backStackEntry ->

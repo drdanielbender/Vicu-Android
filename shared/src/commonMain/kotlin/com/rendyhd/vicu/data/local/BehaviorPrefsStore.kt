@@ -19,6 +19,9 @@ enum class ScheduleAction { DUE_TODAY, PRIORITY_URGENT }
 /** Controls whether subtasks stay in task details or can expand inline in task lists. */
 enum class SubtaskDisplayMode { INSIDE_TASK, EXPANDABLE }
 
+/** Controls whether child projects expose their tasks as sections or navigate as project rows. */
+enum class SubprojectDisplayMode { SECTIONS, PROJECT_ROWS }
+
 data class BehaviorPrefs(
     val completionSoundEnabled: Boolean = false,
     val completionSoundUri: String? = null,
@@ -28,6 +31,7 @@ data class BehaviorPrefs(
     val keepEntryOpen: Boolean = false,
     val fabAlignStart: Boolean = false,
     val subtaskDisplayMode: SubtaskDisplayMode = SubtaskDisplayMode.INSIDE_TASK,
+    val subprojectDisplayMode: SubprojectDisplayMode = SubprojectDisplayMode.SECTIONS,
 )
 
 class BehaviorPrefsStore(
@@ -42,6 +46,7 @@ class BehaviorPrefsStore(
         private val KEY_KEEP_ENTRY_OPEN = booleanPreferencesKey("keep_entry_open")
         private val KEY_FAB_ALIGN_START = booleanPreferencesKey("fab_align_start")
         private val KEY_SUBTASK_DISPLAY_MODE = stringPreferencesKey("subtask_display_mode")
+        private val KEY_SUBPROJECT_DISPLAY_MODE = stringPreferencesKey("subproject_display_mode")
     }
 
     fun getPrefs(): Flow<BehaviorPrefs> =
@@ -59,6 +64,9 @@ class BehaviorPrefsStore(
                 subtaskDisplayMode = prefs[KEY_SUBTASK_DISPLAY_MODE]
                     ?.let { runCatching { SubtaskDisplayMode.valueOf(it) }.getOrNull() }
                     ?: SubtaskDisplayMode.INSIDE_TASK,
+                subprojectDisplayMode = prefs[KEY_SUBPROJECT_DISPLAY_MODE]
+                    ?.let { runCatching { SubprojectDisplayMode.valueOf(it) }.getOrNull() }
+                    ?: SubprojectDisplayMode.SECTIONS,
             )
         }
 
@@ -95,5 +103,9 @@ class BehaviorPrefsStore(
 
     suspend fun setSubtaskDisplayMode(mode: SubtaskDisplayMode) {
         dataStore.edit { it[KEY_SUBTASK_DISPLAY_MODE] = mode.name }
+    }
+
+    suspend fun setSubprojectDisplayMode(mode: SubprojectDisplayMode) {
+        dataStore.edit { it[KEY_SUBPROJECT_DISPLAY_MODE] = mode.name }
     }
 }

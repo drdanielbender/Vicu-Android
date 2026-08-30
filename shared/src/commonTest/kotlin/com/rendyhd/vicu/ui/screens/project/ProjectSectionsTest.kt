@@ -39,6 +39,19 @@ class ProjectSectionsTest {
         assertEquals(emptyList<Long>(), collectDescendants(1L, projects).map { it.id })
     }
 
+    @Test
+    fun `directChildProjects returns only immediate children in position order`() {
+        val projects = listOf(
+            p(1),
+            p(10, parent = 1, position = 20.0),
+            p(11, parent = 1, position = 10.0),
+            p(100, parent = 10, position = 1.0),
+            p(2),
+        )
+
+        assertEquals(listOf(11L, 10L), directChildProjects(1L, projects).map { it.id })
+    }
+
     // buildSectionTree -----------------------------------------------------
 
     @Test

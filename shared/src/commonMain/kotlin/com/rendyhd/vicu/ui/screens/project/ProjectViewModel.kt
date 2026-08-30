@@ -4,6 +4,8 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rendyhd.vicu.data.local.BehaviorPrefsStore
+import com.rendyhd.vicu.data.local.SubprojectDisplayMode
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.repository.LabelRepository
@@ -27,6 +29,7 @@ import kotlinx.coroutines.launch
 
 data class ProjectUiState(
     val project: Project? = null,
+    val childProjects: List<Project> = emptyList(),
     val sections: List<ProjectSection> = emptyList(),
     val unsectionedTasks: List<Task> = emptyList(),
     val isLoading: Boolean = true,
@@ -42,6 +45,7 @@ class ProjectViewModel(
     private val projectRepository: ProjectRepository,
     private val labelRepository: LabelRepository,
     private val syncStaleness: SyncStaleness,
+    private val behaviorPrefsStore: BehaviorPrefsStore,
 ) : ViewModel() {
 
     private val projectId: Long = savedStateHandle["projectId"]!!
@@ -55,9 +59,15 @@ class ProjectViewModel(
                 projectRepository.getById(projectId),
                 projectRepository.getAll(),
                 taskRepository.getByProjectId(projectId),
-            ) { project, allProjects, parentTasks ->
-                Triple(project, allProjects, parentTasks)
-            }.flatMapLatest { (project, allProjects, parentTasks) ->
+                behaviorPrefsStore.getPrefs(),
+            ) { project, allProjects, parentTasks, behaviorPrefs ->
+                ProjectInputs(
+                    project = project,
+                    allProjects = allProjects,
+                    parentTasks = parentTasks,
+                    subprojectDisplayMode = behaviorPrefs.subprojectDisplayMode,
+                )
+            }.flatMapLatest { (project, allProjects, parentTasks, subprojectDisplayMode) ->
                 if (project == null || project.isArchived) {
                     return@flatMapLatest flowOf(
                         ProjectUiState(
@@ -75,31 +85,43 @@ class ProjectViewModel(
                 // subtrees) so archived sub-projects don't surface as sections — matching
                 // how the drawer hides archived projects from navigation.
                 val activeProjects = allProjects
-                val descendants = collectDescendants(projectId, activeProjects)
                 val unsectioned = sortProjectTasks(parentTasks.filter { !it.done })
-                if (descendants.isEmpty()) {
+                if (subprojectDisplayMode == SubprojectDisplayMode.PROJECT_ROWS) {
                     flowOf(
                         ProjectUiState(
                             project = project,
+                            childProjects = directChildProjects(projectId, activeProjects),
                             sections = emptyList(),
                             unsectionedTasks = unsectioned,
                             isLoading = false,
                         )
                     )
                 } else {
-                    // One task flow per descendant; combine rebuilds the tree whenever any changes.
-                    val taskFlows = descendants.map { descendant ->
-                        taskRepository.getByProjectId(descendant.id).map { tasks ->
-                            descendant.id to sortProjectTasks(tasks.filter { !it.done })
-                        }
-                    }
-                    combine(taskFlows) { pairs ->
-                        ProjectUiState(
-                            project = project,
-                            sections = buildSectionTree(projectId, activeProjects, pairs.toMap()),
-                            unsectionedTasks = unsectioned,
-                            isLoading = false,
+                    val descendants = collectDescendants(projectId, activeProjects)
+                    if (descendants.isEmpty()) {
+                        flowOf(
+                            ProjectUiState(
+                                project = project,
+                                sections = emptyList(),
+                                unsectionedTasks = unsectioned,
+                                isLoading = false,
+                            )
                         )
+                    } else {
+                        // One task flow per descendant; combine rebuilds the tree whenever any changes.
+                        val taskFlows = descendants.map { descendant ->
+                            taskRepository.getByProjectId(descendant.id).map { tasks ->
+                                descendant.id to sortProjectTasks(tasks.filter { !it.done })
+                            }
+                        }
+                        combine(taskFlows) { pairs ->
+                            ProjectUiState(
+                                project = project,
+                                sections = buildSectionTree(projectId, activeProjects, pairs.toMap()),
+                                unsectionedTasks = unsectioned,
+                                isLoading = false,
+                            )
+                        }
                     }
                 }
             }.collect { newState ->
@@ -228,3 +250,10 @@ class ProjectViewModel(
         _uiState.update { it.copy(error = null) }
     }
 }
+
+private data class ProjectInputs(
+    val project: Project?,
+    val allProjects: List<Project>,
+    val parentTasks: List<Task>,
+    val subprojectDisplayMode: SubprojectDisplayMode,
+)
