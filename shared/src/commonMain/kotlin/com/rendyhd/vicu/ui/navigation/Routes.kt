@@ -15,3 +15,15 @@ import kotlinx.serialization.Serializable
 @Serializable data class CustomListRoute(val listId: String)
 @Serializable object SearchRoute
 @Serializable object SettingsRoute
+
+/**
+ * Returns a project route only when it would open a different project.
+ *
+ * Project destinations are drill-down screens: parent and child projects must have distinct
+ * back-stack entries so each receives its own SavedStateHandle and ViewModel.
+ */
+internal fun projectRouteToPush(
+    currentProjectId: Long?,
+    targetProjectId: Long,
+): ProjectRoute? =
+    if (currentProjectId == targetProjectId) null else ProjectRoute(targetProjectId)

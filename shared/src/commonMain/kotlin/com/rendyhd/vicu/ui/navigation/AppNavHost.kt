@@ -4,6 +4,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -107,8 +108,15 @@ fun AppNavHost(
                 onNavigateToSearch = onNavigateToSearch,
                 onShowTaskEntry = onShowTaskEntry,
                 onProjectClick = { childProjectId ->
-                    navController.navigate(ProjectRoute(childProjectId)) {
-                        launchSingleTop = true
+                    val currentProjectId = navController.currentBackStackEntry
+                        ?.takeIf { it.destination.hasRoute(ProjectRoute::class) }
+                        ?.toRoute<ProjectRoute>()
+                        ?.projectId
+
+                    // Do not use launchSingleTop here. Parent and child projects share the same
+                    // destination type, so singleTop would reuse the parent's entry and ViewModel.
+                    projectRouteToPush(currentProjectId, childProjectId)?.let { routeToPush ->
+                        navController.navigate(routeToPush)
                     }
                 },
             )
