@@ -6,7 +6,8 @@ import com.rendyhd.vicu.util.moveTaskInList
 
 /**
  * One project section: a descendant project rendered as a collapsible group, its undone
- * tasks, and its own nested sub-sections. [isExpanded] is UI state preserved across emissions.
+ * tasks, and its own nested sub-sections. [isExpanded] is local UI state restored from
+ * [com.rendyhd.vicu.data.local.ProjectSectionPrefsStore].
  */
 data class ProjectSection(
     val project: Project,
@@ -83,6 +84,17 @@ fun preserveExpansion(new: List<ProjectSection>, old: List<ProjectSection>): Lis
     return apply(new)
 }
 
+/** Apply the collapsed ids restored for the current root project to a newly built tree. */
+fun restoreExpansion(
+    sections: List<ProjectSection>,
+    collapsedSectionIds: Set<Long>,
+): List<ProjectSection> = sections.map { section ->
+    section.copy(
+        isExpanded = section.project.id !in collapsedSectionIds,
+        children = restoreExpansion(section.children, collapsedSectionIds),
+    )
+}
+
 /** Recursively flip isExpanded on the node whose project id is [projectId]. */
 fun toggleSectionExpanded(sections: List<ProjectSection>, projectId: Long): List<ProjectSection> =
     sections.map { s ->
@@ -92,6 +104,15 @@ fun toggleSectionExpanded(sections: List<ProjectSection>, projectId: Long): List
             s.copy(children = toggleSectionExpanded(s.children, projectId))
         }
     }
+
+/** The section with [projectId], searched recursively, or null. */
+fun findProjectSection(sections: List<ProjectSection>, projectId: Long): ProjectSection? {
+    for (section in sections) {
+        if (section.project.id == projectId) return section
+        findProjectSection(section.children, projectId)?.let { return it }
+    }
+    return null
+}
 
 /**
  * Reorder within whichever section's task list holds both [fromId] and [toId]: returns the

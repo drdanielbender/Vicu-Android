@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rendyhd.vicu.data.local.BehaviorPrefsStore
+import com.rendyhd.vicu.data.local.ProjectSectionPrefsStore
 import com.rendyhd.vicu.data.local.SubprojectDisplayMode
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.domain.model.Task
@@ -46,6 +47,7 @@ class ProjectViewModel(
     private val labelRepository: LabelRepository,
     private val syncStaleness: SyncStaleness,
     private val behaviorPrefsStore: BehaviorPrefsStore,
+    private val projectSectionPrefsStore: ProjectSectionPrefsStore,
 ) : ViewModel() {
 
     private val projectId: Long = savedStateHandle["projectId"]!!
@@ -60,14 +62,17 @@ class ProjectViewModel(
                 projectRepository.getAll(),
                 taskRepository.getByProjectId(projectId),
                 behaviorPrefsStore.getPrefs(),
-            ) { project, allProjects, parentTasks, behaviorPrefs ->
+                projectSectionPrefsStore.collapsedSectionIds(projectId),
+            ) { project, allProjects, parentTasks, behaviorPrefs, collapsedSectionIds ->
                 ProjectInputs(
                     project = project,
                     allProjects = allProjects,
                     parentTasks = parentTasks,
                     subprojectDisplayMode = behaviorPrefs.subprojectDisplayMode,
+                    collapsedSectionIds = collapsedSectionIds,
                 )
-            }.flatMapLatest { (project, allProjects, parentTasks, subprojectDisplayMode) ->
+            }.flatMapLatest { inputs ->
+                val (project, allProjects, parentTasks, subprojectDisplayMode, collapsedSectionIds) = inputs
                 if (project == null || project.isArchived) {
                     return@flatMapLatest flowOf(
                         ProjectUiState(
@@ -117,7 +122,10 @@ class ProjectViewModel(
                         combine(taskFlows) { pairs ->
                             ProjectUiState(
                                 project = project,
-                                sections = buildSectionTree(projectId, activeProjects, pairs.toMap()),
+                                sections = restoreExpansion(
+                                    buildSectionTree(projectId, activeProjects, pairs.toMap()),
+                                    collapsedSectionIds,
+                                ),
                                 unsectionedTasks = unsectioned,
                                 isLoading = false,
                             )
@@ -176,9 +184,18 @@ class ProjectViewModel(
         }
     }
 
-    fun toggleSection(projectId: Long) {
+    fun toggleSection(sectionProjectId: Long) {
+        val section = findProjectSection(_uiState.value.sections, sectionProjectId) ?: return
+        val isExpanded = !section.isExpanded
         _uiState.update { state ->
-            state.copy(sections = toggleSectionExpanded(state.sections, projectId))
+            state.copy(sections = toggleSectionExpanded(state.sections, sectionProjectId))
+        }
+        viewModelScope.launch {
+            projectSectionPrefsStore.setExpanded(
+                rootProjectId = projectId,
+                sectionProjectId = sectionProjectId,
+                isExpanded = isExpanded,
+            )
         }
     }
 
@@ -256,4 +273,5 @@ private data class ProjectInputs(
     val allProjects: List<Project>,
     val parentTasks: List<Task>,
     val subprojectDisplayMode: SubprojectDisplayMode,
+    val collapsedSectionIds: Set<Long>,
 )

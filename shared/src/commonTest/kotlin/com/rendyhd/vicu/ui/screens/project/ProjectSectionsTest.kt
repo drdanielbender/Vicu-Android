@@ -188,6 +188,33 @@ class ProjectSectionsTest {
     }
 
     @Test
+    fun `restoreExpansion applies persisted collapsed state at every depth`() {
+        val tree = listOf(
+            ProjectSection(
+                p(10),
+                emptyList(),
+                listOf(ProjectSection(p(100), emptyList())),
+            ),
+            ProjectSection(p(20), emptyList()),
+        )
+
+        val restored = restoreExpansion(tree, setOf(10L, 100L))
+
+        assertFalse(restored[0].isExpanded)
+        assertFalse(restored[0].children[0].isExpanded)
+        assertTrue(restored[1].isExpanded)
+    }
+
+    @Test
+    fun `findProjectSection locates a nested section`() {
+        val nested = ProjectSection(p(100), emptyList())
+        val tree = listOf(ProjectSection(p(10), emptyList(), listOf(nested)))
+
+        assertEquals(nested, findProjectSection(tree, 100L))
+        assertNull(findProjectSection(tree, 999L))
+    }
+
+    @Test
     fun `moveTaskInSections returns null when a same-section move involves a dated task`() {
         val dated = Task(id = 2, title = "t2", dueDate = "2026-05-10T00:00:00Z", position = 20.0)
         val tree = listOf(ProjectSection(p(10), listOf(t(1, 10.0), dated)))
