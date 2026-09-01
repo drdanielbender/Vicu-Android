@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -38,7 +38,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,8 +62,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -218,6 +216,7 @@ fun TaskDetailScreen(
                                 .fillMaxWidth()
                                 .onSizeChanged { fieldSize = it },
                             textStyle = MaterialTheme.typography.titleMedium,
+                            shape = RoundedCornerShape(12.dp),
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Sentences,
                             ),
@@ -304,106 +303,11 @@ fun TaskDetailScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Labels section
-            item(key = "labels") {
-                Text("Labels", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(4.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    task.labels.forEach { label ->
-                        val labelColor = parseHexColor(label.hexColor)
-                            ?: MaterialTheme.colorScheme.secondaryContainer
-
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = labelColor.copy(alpha = 0.2f),
-                        ) {
-                            Text(
-                                text = label.title,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = labelColor,
-                            )
-                        }
-                    }
-
-                    AssistChip(
-                        onClick = { showLabelPicker = true },
-                        label = { Text("Add label") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            // Due date
-            item(key = "due_date") {
+            // Compact edit actions
+            item(key = "task_actions") {
                 val hasDueDate = task.dueDate.isNotBlank() && !DateUtils.isNullDate(task.dueDate)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showDatePicker = true }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    if (hasDueDate) {
-                        val isOverdue = DateUtils.isOverdue(task.dueDate)
-                        Text(
-                            text = DateUtils.formatRelativeDate(task.dueDate),
-                            color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                        )
-                    } else {
-                        Text(
-                            text = "Add due date",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-
-            // Reminders
-            item(key = "reminders") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showReminderPicker = true }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    if (task.reminders.isNotEmpty()) {
-                        Text(ReminderFormat.summary(task.reminders))
-                    } else {
-                        Text("Add reminder", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            // Project
-            item(key = "project") {
+                val dueDateLabel = if (hasDueDate) DateUtils.formatRelativeDate(task.dueDate) else null
                 val projectName = state.allProjects.find { it.id == task.projectId }?.title ?: "No project"
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showProjectPicker = true }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(projectName)
-                }
-            }
-
-            // Priority
-            item(key = "priority") {
                 val priorityLabel = when (task.priority) {
                     1 -> "Low"
                     2 -> "Medium"
@@ -411,43 +315,100 @@ fun TaskDetailScreen(
                     4 -> "Urgent"
                     else -> null
                 }
+                val recurrenceLabel = DateUtils.formatRecurrence(task.repeatAfter, task.repeatMode)
+
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showPriorityPicker = true }
-                        .padding(vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    if (priorityLabel != null) {
-                        Text(priorityLabel)
-                    } else {
-                        Text("Set priority", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    TaskDetailActionButton(
+                        icon = Icons.Default.Sell,
+                        contentDescription = if (task.labels.isEmpty()) {
+                            "Add label"
+                        } else {
+                            "Edit labels, ${task.labels.size} selected"
+                        },
+                        isActive = task.labels.isNotEmpty(),
+                        onClick = { showLabelPicker = true },
+                    )
+                    TaskDetailActionButton(
+                        icon = Icons.Default.CalendarToday,
+                        contentDescription = dueDateLabel?.let { "Due date: $it" } ?: "Add due date",
+                        isActive = hasDueDate,
+                        onClick = { showDatePicker = true },
+                    )
+                    TaskDetailActionButton(
+                        icon = Icons.Default.Notifications,
+                        contentDescription = if (task.reminders.isEmpty()) {
+                            "Add reminder"
+                        } else {
+                            "Reminders: ${ReminderFormat.summary(task.reminders)}"
+                        },
+                        isActive = task.reminders.isNotEmpty(),
+                        onClick = { showReminderPicker = true },
+                    )
+                    TaskDetailActionButton(
+                        icon = Icons.Default.Folder,
+                        contentDescription = "Project: $projectName",
+                        isActive = task.projectId > 0,
+                        onClick = { showProjectPicker = true },
+                    )
+                    TaskDetailActionButton(
+                        icon = Icons.Default.Flag,
+                        contentDescription = priorityLabel?.let { "Priority: $it" } ?: "Set priority",
+                        isActive = priorityLabel != null,
+                        onClick = { showPriorityPicker = true },
+                    )
+                    TaskDetailActionButton(
+                        icon = Icons.Default.Repeat,
+                        contentDescription = if (recurrenceLabel.isBlank()) {
+                            "Set recurrence"
+                        } else {
+                            "Recurrence: $recurrenceLabel"
+                        },
+                        isActive = recurrenceLabel.isNotBlank(),
+                        onClick = { showRecurrencePicker = true },
+                    )
+                    TaskDetailActionButton(
+                        icon = Icons.Default.AttachFile,
+                        contentDescription = if (state.attachments.isEmpty()) {
+                            "Add attachment"
+                        } else {
+                            "Add attachment, ${state.attachments.size} attached"
+                        },
+                        isActive = state.attachments.isNotEmpty(),
+                        onClick = filePickerLauncher,
+                    )
                 }
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Recurrence
-            item(key = "recurrence") {
-                val recurrenceLabel = DateUtils.formatRecurrence(task.repeatAfter, task.repeatMode)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showRecurrencePicker = true }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    if (recurrenceLabel.isNotBlank()) {
-                        Text(
-                            text = recurrenceLabel,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    } else {
-                        Text("Set recurrence", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Assigned labels remain visible; the icon row opens the picker.
+            if (task.labels.isNotEmpty()) {
+                item(key = "labels") {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        task.labels.forEach { label ->
+                            val labelColor = parseHexColor(label.hexColor)
+                                ?: MaterialTheme.colorScheme.secondaryContainer
+
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = labelColor.copy(alpha = 0.2f),
+                            ) {
+                                Text(
+                                    text = label.title,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = labelColor,
+                                )
+                            }
+                        }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
@@ -577,61 +538,53 @@ fun TaskDetailScreen(
                 }
             }
 
-            // Divider
-            item(key = "divider_attachments") {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Text("Attachments", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(4.dp))
-            }
+            if (visibleAttachments.isNotEmpty()) {
+                item(key = "divider_attachments") {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Attachments", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
 
-            // Image-token-referenced attachments are hidden here — they render
-            // as thumbnails inside DescriptionField instead.
-            items(visibleAttachments, key = { "att_${it.id}" }) { attachment ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = attachment.fileName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        )
-                        if (attachment.fileSize > 0) {
-                            val sizeStr = when {
-                                attachment.fileSize > 1_048_576 -> "${attachment.fileSize / 1_048_576} MB"
-                                attachment.fileSize > 1024 -> "${attachment.fileSize / 1024} KB"
-                                else -> "${attachment.fileSize} B"
-                            }
+                // Image-token-referenced attachments are hidden here — they render
+                // as thumbnails inside DescriptionField instead.
+                items(visibleAttachments, key = { "att_${it.id}" }) { attachment ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = sizeStr,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = attachment.fileName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            if (attachment.fileSize > 0) {
+                                val sizeStr = when {
+                                    attachment.fileSize > 1_048_576 -> "${attachment.fileSize / 1_048_576} MB"
+                                    attachment.fileSize > 1024 -> "${attachment.fileSize / 1024} KB"
+                                    else -> "${attachment.fileSize} B"
+                                }
+                                Text(
+                                    text = sizeStr,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        IconButton(onClick = { viewModel.deleteAttachment(attachment.id) }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
                             )
                         }
                     }
-                    IconButton(onClick = { viewModel.deleteAttachment(attachment.id) }) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-            }
-
-            // Upload attachment button
-            item(key = "upload_attachment") {
-                TextButton(onClick = filePickerLauncher) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Add attachment")
                 }
             }
 
@@ -811,6 +764,30 @@ fun TaskDetailScreen(
                 showRelationPicker = false
             },
             onDismiss = { showRelationPicker = false },
+        )
+    }
+}
+
+@Composable
+private fun TaskDetailActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    isActive: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(40.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(21.dp),
+            tint = if (isActive) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
         )
     }
 }
