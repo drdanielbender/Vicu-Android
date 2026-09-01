@@ -21,6 +21,7 @@ import com.rendyhd.vicu.data.remote.BaseUrlHolder
 import com.rendyhd.vicu.domain.model.SharedContent
 import com.rendyhd.vicu.ui.VicuApp
 import com.rendyhd.vicu.worker.TokenRefreshScheduler
+import com.rendyhd.vicu.worker.SyncScheduler
 import com.rendyhd.vicu.ui.theme.VicuTheme
 import org.koin.android.ext.android.inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
             // Schedule periodic token refresh if authenticated
             if (authManager.authState.value == com.rendyhd.vicu.auth.AuthState.Authenticated) {
                 TokenRefreshScheduler.schedule(this@MainActivity)
+                SyncScheduler.enqueueWhenOnline(this@MainActivity)
             }
         }
 
@@ -107,6 +109,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         AuthDebugLog.lifecycle("onResume (authState=${authManager.authState.value})")
+        if (authManager.authState.value == com.rendyhd.vicu.auth.AuthState.Authenticated) {
+            SyncScheduler.enqueueWhenOnline(this)
+        }
     }
 
     override fun onStop() {

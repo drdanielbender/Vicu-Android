@@ -38,6 +38,7 @@ data class TaskDto(
 data class CreateTaskDto(
     val title: String,
     val description: String = "",
+    val done: Boolean = false,
     @SerialName("due_date") val dueDate: String? = null,
     @SerialName("start_date") val startDate: String? = null,
     val priority: Int = 0,

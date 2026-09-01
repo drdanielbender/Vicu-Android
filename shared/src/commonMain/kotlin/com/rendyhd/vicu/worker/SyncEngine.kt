@@ -17,11 +17,14 @@ import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.data.remote.BaseUrlHolder
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.model.CustomListSyncStatus
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
+import com.rendyhd.vicu.domain.repository.CustomListRepository
 import com.rendyhd.vicu.util.DateUtils
 import com.rendyhd.vicu.util.isRetriableNetworkError
 import com.rendyhd.vicu.util.Logger
 import com.rendyhd.vicu.util.RoutineEnvelope
+import com.rendyhd.vicu.util.CustomListEnvelope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration.Companion.seconds
@@ -48,6 +51,7 @@ class SyncEngine(
     private val json: Json,
     private val baseUrlHolder: BaseUrlHolder,
     private val authManager: AuthManager,
+    private val customListRepository: CustomListRepository,
 ) {
     companion object {
         private const val TAG = "SyncEngine"
@@ -92,6 +96,11 @@ class SyncEngine(
 
             pendingActionDao.deleteCompleted()
 
+            when (customListRepository.sync()) {
+                CustomListSyncStatus.Pending,
+                is CustomListSyncStatus.Offline -> hasRetriableFailures = true
+                else -> Unit
+            }
             refreshAllFromServer()
         } catch (e: Exception) {
             Logger.e(TAG, "SyncEngine failed: ${e.message}", e)
@@ -126,7 +135,7 @@ class SyncEngine(
                         if (routineId != null) {
                             RoutineEnvelope.parse(dto.description, json).payload?.definition?.id == routineId
                         } else {
-                            !RoutineEnvelope.hasMarker(dto.description)
+                            !CustomListEnvelope.isAnyMetadataTask(dto.description)
                         }
                 }
         }
@@ -270,7 +279,8 @@ class SyncEngine(
     private suspend fun refreshAllFromServer() {
         try {
             val allTasks = api.getAllTasks()
-            val taskEntities = allTasks.map { with(taskMapper) { it.toEntity() } }
+            val visibleTasks = allTasks.filterNot { CustomListEnvelope.hasMarker(it.description) }
+            val taskEntities = visibleTasks.map { with(taskMapper) { it.toEntity() } }
             val pendingTaskIds = pendingActionDao.getTaskIdsWithPendingActions().toSet()
             val existingById = taskDao.getAllSync().associateBy { it.id }
             val safeEntities = taskEntities.filter { it.id !in pendingTaskIds }
@@ -285,7 +295,7 @@ class SyncEngine(
                 old == null || old.remindersJson != e.remindersJson ||
                     old.dueDate != e.dueDate || old.done != e.done
             }
-            val serverTaskIds = allTasks.map { it.id }.toSet() + pendingTaskIds
+            val serverTaskIds = visibleTasks.map { it.id }.toSet() + pendingTaskIds
             val deletedIds = existingById.keys - serverTaskIds
             if (deletedIds.isNotEmpty()) {
                 routinesTouched = routinesTouched || deletedIds.any { id ->

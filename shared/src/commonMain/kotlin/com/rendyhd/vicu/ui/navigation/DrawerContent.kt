@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.rendyhd.vicu.ui.components.shared.IconRegistry
 import sh.calvin.reorderable.ReorderableColumn
 
 private val SmartListTodayColor = Color(0xFFEAB308)
@@ -280,7 +281,8 @@ fun DrawerContent(
                                         label = { Text(list.name) },
                                         icon = {
                                             Icon(
-                                                Icons.Outlined.FilterList,
+                                                IconRegistry.PRESET_ICONS.firstOrNull { it.key == list.icon }?.icon
+                                                    ?: Icons.Outlined.FilterList,
                                                 contentDescription = null,
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )

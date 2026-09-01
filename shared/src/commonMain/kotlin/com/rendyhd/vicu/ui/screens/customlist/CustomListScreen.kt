@@ -108,7 +108,9 @@ fun CustomListScreen(
         },
         floatingActionButton = {
             if (!selectionActive) {
-                val addToProject = state.customList?.filter?.addToProjectId?.takeIf { it != 0L }
+                val addToProject = state.customList?.filter?.addToProjectId?.takeIf { requested ->
+                    requested != 0L && projects.any { it.id == requested && !it.isArchived }
+                }
                 VicuFab(onClick = { onShowTaskEntry(addToProject, null) })
             }
         },

@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.data.local.BottomBarPrefsStore
-import com.rendyhd.vicu.data.local.CustomListStore
 import com.rendyhd.vicu.data.local.LabelOrderPrefsStore
 import com.rendyhd.vicu.data.local.ReviewPrefsStore
 import com.rendyhd.vicu.domain.model.BottomBarSlot
@@ -14,6 +13,7 @@ import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.domain.repository.LabelRepository
 import com.rendyhd.vicu.domain.repository.ProjectRepository
+import com.rendyhd.vicu.domain.repository.CustomListRepository
 import com.rendyhd.vicu.util.ReviewMetadata
 import com.rendyhd.vicu.util.ReviewState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +56,7 @@ data class DrawerUiState(
 class DrawerViewModel(
     private val projectRepository: ProjectRepository,
     labelRepository: LabelRepository,
-    private val customListStore: CustomListStore,
+    private val customListRepository: CustomListRepository,
     private val authManager: AuthManager,
     private val bottomBarPrefsStore: BottomBarPrefsStore,
     private val reviewPrefsStore: ReviewPrefsStore,
@@ -95,7 +95,7 @@ class DrawerViewModel(
         combine(
             projectRepository.getAll(),
             labelRepository.getAll(),
-            customListStore.getAll(),
+            customListRepository.lists,
             _sectionsExpanded,
             _inboxProjectId,
         ) { projects, labels, customLists, expanded, inboxId ->
@@ -171,7 +171,7 @@ class DrawerViewModel(
 
     fun saveCustomList(customList: CustomList) {
         viewModelScope.launch {
-            customListStore.save(customList)
+            customListRepository.upsert(customList)
         }
     }
 
@@ -194,7 +194,7 @@ class DrawerViewModel(
 
     fun reorderCustomList(fromIndex: Int, toIndex: Int) {
         viewModelScope.launch {
-            customListStore.reorder(fromIndex, toIndex)
+            customListRepository.reorder(fromIndex, toIndex)
         }
     }
 

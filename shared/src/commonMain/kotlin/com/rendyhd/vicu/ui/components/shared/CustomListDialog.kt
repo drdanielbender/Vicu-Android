@@ -73,6 +73,8 @@ private val ORDER_OPTIONS = listOf(
     "desc" to "Descending",
 )
 
+private val ICON_OPTIONS = IconRegistry.PRESET_ICONS.map { it.key to it.label }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomListDialog(
@@ -92,6 +94,7 @@ fun CustomListDialog(
     }
     val isEdit = customList != null
     var name by remember { mutableStateOf(customList?.name ?: "") }
+    var icon by remember { mutableStateOf(customList?.icon?.ifBlank { "filter_list" } ?: "filter_list") }
     var selectedProjectIds by remember {
         mutableStateOf(customList?.filter?.projectIds?.toSet() ?: emptySet())
     }
@@ -126,6 +129,15 @@ fun CustomListDialog(
                     label = { Text("Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                DropdownSelector(
+                    label = "Icon",
+                    options = ICON_OPTIONS,
+                    selected = icon,
+                    onSelect = { icon = it },
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -362,7 +374,7 @@ fun CustomListDialog(
                             CustomList(
                                 id = customList?.id ?: randomUuid(),
                                 name = name.trim(),
-                                icon = customList?.icon ?: "",
+                                icon = icon,
                                 filter = CustomListFilter(
                                     projectIds = selectedProjectIds.toList(),
                                     projectFilterMode = projectFilterMode,
@@ -448,7 +460,7 @@ private fun AddToProjectSelector(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedName = if (selectedProjectId == 0L) "Inbox (default)"
-    else projects.find { it.id == selectedProjectId }?.title ?: "Inbox (default)"
+    else projects.find { it.id == selectedProjectId }?.title ?: "Unavailable project (uses Inbox)"
 
     ExposedDropdownMenuBox(
         expanded = expanded,

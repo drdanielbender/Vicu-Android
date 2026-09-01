@@ -14,6 +14,7 @@ import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.repository.TaskRepository
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
 import com.rendyhd.vicu.util.DateUtils
+import com.rendyhd.vicu.util.CustomListEnvelope
 import com.rendyhd.vicu.util.NetworkResult
 import com.rendyhd.vicu.util.isRetriableNetworkError
 import com.rendyhd.vicu.util.Logger
@@ -144,7 +145,7 @@ class TaskRepositoryImpl(
         }
 
     private fun List<TaskEntity>.toTopLevelTasks(): List<Task> =
-        filterNot { RoutineEnvelope.hasMarker(it.description) }
+        filterNot { CustomListEnvelope.isAnyMetadataTask(it.description) }
             .map { with(taskMapper) { it.toDomain() } }
             .withoutNestedSubtasks()
 
@@ -199,7 +200,7 @@ class TaskRepositoryImpl(
     override fun getById(id: Long): Flow<Task?> =
         taskDao.getById(id).map { entity ->
             entity
-                ?.takeUnless { RoutineEnvelope.hasMarker(it.description) }
+                ?.takeUnless { CustomListEnvelope.isAnyMetadataTask(it.description) }
                 ?.let { with(taskMapper) { it.toDomain() } }
         }
 
@@ -320,7 +321,7 @@ class TaskRepositoryImpl(
 
     override suspend fun getByIds(ids: Set<Long>): List<Task> =
         taskDao.getByIds(ids.toList())
-            .filterNot { RoutineEnvelope.hasMarker(it.description) }
+            .filterNot { CustomListEnvelope.isAnyMetadataTask(it.description) }
             .map { with(taskMapper) { it.toDomain() } }
 
     override suspend fun applyScheduleAction(task: Task): NetworkResult<Task> {
@@ -707,7 +708,10 @@ class TaskRepositoryImpl(
         Logger.d(TAG, "refreshAll() called with filters=$filters")
         return try {
             val allTasks = api.getAllTasks(filters)
-            val entities = allTasks.map { with(taskMapper) { it.toEntity() } }
+            // Routine carriers remain cached for their existing merge engine. Custom-list
+            // carriers are owned by CustomListRepository and must never enter user task data.
+            val visibleTasks = allTasks.filterNot { CustomListEnvelope.hasMarker(it.description) }
+            val entities = visibleTasks.map { with(taskMapper) { it.toEntity() } }
             val pendingTaskIds = pendingActionDao.getTaskIdsWithPendingActions().toSet()
             val existingById = taskDao.getAllSync().associateBy { it.id }
             val safeEntities = entities.filter { it.id !in pendingTaskIds }
@@ -723,7 +727,7 @@ class TaskRepositoryImpl(
                     old.dueDate != e.dueDate || old.done != e.done
             }
             if (filters.isEmpty()) {
-                val serverTaskIds = allTasks.map { it.id }.toSet() + pendingTaskIds
+                val serverTaskIds = visibleTasks.map { it.id }.toSet() + pendingTaskIds
                 val deletedIds = existingById.keys - serverTaskIds
                 if (deletedIds.isNotEmpty()) {
                     routinesTouched = routinesTouched || deletedIds.any { id ->

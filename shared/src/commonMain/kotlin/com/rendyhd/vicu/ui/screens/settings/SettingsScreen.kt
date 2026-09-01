@@ -97,6 +97,7 @@ import com.rendyhd.vicu.domain.model.BottomBarSlotType
 import com.rendyhd.vicu.auth.AuthDebugLog
 import com.rendyhd.vicu.util.parser.SyntaxMode
 import com.rendyhd.vicu.domain.model.CustomList
+import com.rendyhd.vicu.domain.model.CustomListSyncStatus
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.ui.components.shared.BottomBarSlotEditor
@@ -269,6 +270,7 @@ fun SettingsScreen(
                             viewModel.deleteCustomList(customList.id)
                         }
                     },
+                    onRetryCustomListSync = viewModel::retryCustomListSync,
                     onEditBottomBarSlot = { index -> editingSlotIndex = index },
                     onResetBottomBar = viewModel::resetBottomBar,
                     onSetWidgetSmartAdd = viewModel::setWidgetSmartAdd,
@@ -844,6 +846,7 @@ private fun GeneralTab(
     onShowCustomListDialog: () -> Unit,
     onEditCustomList: (CustomList) -> Unit,
     onDeleteCustomList: (CustomList) -> Unit,
+    onRetryCustomListSync: () -> Unit,
     onEditBottomBarSlot: (Int) -> Unit,
     onResetBottomBar: () -> Unit,
     onSetWidgetSmartAdd: (Boolean) -> Unit,
@@ -1586,6 +1589,45 @@ private fun GeneralTab(
                 title = "Custom Lists",
                 onAdd = onShowCustomListDialog,
             )
+        }
+
+        if (state.customListSyncStatus !is CustomListSyncStatus.Idle) {
+            item(key = "lists_sync_status") {
+                val status = state.customListSyncStatus
+                val message = when (status) {
+                    CustomListSyncStatus.Idle -> ""
+                    CustomListSyncStatus.Syncing -> "Syncing custom lists…"
+                    CustomListSyncStatus.Pending -> "Custom-list changes are pending"
+                    is CustomListSyncStatus.Offline -> status.message
+                    is CustomListSyncStatus.Error -> status.message
+                    is CustomListSyncStatus.UpdateRequired -> status.message
+                }
+                val canRetry = status is CustomListSyncStatus.Pending ||
+                    status is CustomListSyncStatus.Offline ||
+                    status is CustomListSyncStatus.Error
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (status is CustomListSyncStatus.Error ||
+                            status is CustomListSyncStatus.UpdateRequired
+                        ) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (canRetry) {
+                        TextButton(onClick = onRetryCustomListSync) { Text("Retry") }
+                    }
+                }
+            }
         }
 
         if (state.customLists.isEmpty()) {

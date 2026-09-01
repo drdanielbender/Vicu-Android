@@ -5,7 +5,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rendyhd.vicu.auth.AuthManager
-import com.rendyhd.vicu.data.local.CustomListStore
 import com.rendyhd.vicu.domain.model.CustomList
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Project
@@ -13,6 +12,7 @@ import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.repository.LabelRepository
 import com.rendyhd.vicu.domain.repository.ProjectRepository
 import com.rendyhd.vicu.domain.repository.TaskRepository
+import com.rendyhd.vicu.domain.repository.CustomListRepository
 import com.rendyhd.vicu.util.CustomListFilterBuilder
 import com.rendyhd.vicu.util.NetworkResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -46,7 +46,7 @@ class CustomListViewModel(
     private val taskRepository: TaskRepository,
     private val projectRepository: ProjectRepository,
     private val labelRepository: LabelRepository,
-    private val customListStore: CustomListStore,
+    private val customListRepository: CustomListRepository,
     private val authManager: AuthManager,
 ) : ViewModel() {
 
@@ -65,7 +65,7 @@ class CustomListViewModel(
         // Render from Room with client-side filter + sort. flatMapLatest cancels the previous
         // collector when the list config changes (the old code leaked one collector per edit).
         viewModelScope.launch {
-            customListStore.getById(listId)
+            customListRepository.lists.map { lists -> lists.find { it.id == listId } }
                 .flatMapLatest { customList ->
                     if (customList == null) {
                         flowOf<Pair<CustomList?, List<Task>>>(null to emptyList())
@@ -93,7 +93,7 @@ class CustomListViewModel(
         }
         // Background network refresh, once per distinct filter config (Room paints first).
         viewModelScope.launch {
-            customListStore.getById(listId)
+            customListRepository.lists.map { lists -> lists.find { it.id == listId } }
                 .map { it?.filter }
                 .distinctUntilChanged()
                 .collect { filter ->
@@ -113,6 +113,8 @@ class CustomListViewModel(
             val completedIds = _uiState.value.completedTaskIds
             _uiState.update { it.copy(isRefreshing = showSpinner, error = null, completedTaskIds = emptySet()) }
             try {
+                // A foreground refresh also pulls custom-list edits made by another client.
+                customListRepository.sync()
                 if (completedIds.isNotEmpty()) taskRepository.deleteLocalByIds(completedIds)
                 val customList = _uiState.value.customList
                 if (customList != null) {
@@ -177,14 +179,14 @@ class CustomListViewModel(
 
     fun saveCustomList(customList: CustomList) {
         viewModelScope.launch {
-            customListStore.save(customList)
+            customListRepository.upsert(customList)
         }
     }
 
     fun deleteCustomList() {
         viewModelScope.launch {
             try {
-                customListStore.delete(listId)
+                customListRepository.delete(listId)
                 _uiState.update { it.copy(isDeleted = true) }
             } catch (e: Exception) {
                 Log.e("CustomListViewModel", "deleteCustomList() failed: ${e.message}", e)

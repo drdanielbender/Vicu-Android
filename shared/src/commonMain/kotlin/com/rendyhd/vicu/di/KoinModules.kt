@@ -107,6 +107,15 @@ val repositoryModule = module {
             attachmentMapper = get()
         )
     }
+    single<CustomListRepository> {
+        CustomListRepositoryImpl(
+            store = get(),
+            api = get(),
+            authManager = get(),
+            platformHooks = get(),
+            json = get(),
+        )
+    }
     single<RoutineRepository> {
         RoutineRepositoryImpl(
             taskDao = get(),
@@ -156,7 +165,8 @@ val commonModule = module {
             platformHooks = get(),
             json = get(),
             baseUrlHolder = get(),
-            authManager = get()
+            authManager = get(),
+            customListRepository = get(),
         )
     }
 }

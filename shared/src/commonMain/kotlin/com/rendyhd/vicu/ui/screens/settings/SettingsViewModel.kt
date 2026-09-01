@@ -7,7 +7,6 @@ import com.rendyhd.vicu.auth.TokenStorage
 import com.rendyhd.vicu.data.local.BehaviorPrefs
 import com.rendyhd.vicu.data.local.BehaviorPrefsStore
 import com.rendyhd.vicu.data.local.BottomBarPrefsStore
-import com.rendyhd.vicu.data.local.CustomListStore
 import com.rendyhd.vicu.data.local.LogbookPrefs
 import com.rendyhd.vicu.data.local.LogbookPrefsStore
 import com.rendyhd.vicu.data.local.NlpPrefsStore
@@ -27,10 +26,12 @@ import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.domain.model.BottomBarSlot
 import com.rendyhd.vicu.domain.model.CustomList
+import com.rendyhd.vicu.domain.model.CustomListSyncStatus
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.domain.repository.LabelRepository
 import com.rendyhd.vicu.domain.repository.ProjectRepository
+import com.rendyhd.vicu.domain.repository.CustomListRepository
 import com.rendyhd.vicu.util.NetworkMonitor
 import com.rendyhd.vicu.util.NetworkResult
 import com.rendyhd.vicu.ui.screens.settings.PlatformSettingsHooks
@@ -54,6 +55,7 @@ data class SettingsUiState(
     // Labels & Custom Lists
     val labels: List<Label> = emptyList(),
     val customLists: List<CustomList> = emptyList(),
+    val customListSyncStatus: CustomListSyncStatus = CustomListSyncStatus.Idle,
     val projects: List<Project> = emptyList(),
     val archivedProjects: List<Project> = emptyList(),
     // Notifications
@@ -84,7 +86,7 @@ class SettingsViewModel(
     private val tokenStorage: TokenStorage,
     private val labelRepository: LabelRepository,
     private val projectRepository: ProjectRepository,
-    private val customListStore: CustomListStore,
+    private val customListRepository: CustomListRepository,
     private val notificationPrefsStore: NotificationPrefsStore,
     private val behaviorPrefsStore: BehaviorPrefsStore,
     private val themePrefsStore: ThemePrefsStore,
@@ -112,12 +114,15 @@ class SettingsViewModel(
             // complete snapshot when opened to pick up changes made in Vikunja or desktop.
             projectRepository.refreshAll()
         }
+        viewModelScope.launch { customListRepository.sync() }
     }
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(
             labelRepository.getAll(),
-            customListStore.getAll(),
+            combine(customListRepository.lists, customListRepository.syncStatus) { lists, status ->
+                lists to status
+            },
             projectRepository.getAllIncludingArchived(),
             notificationPrefsStore.getPrefs(),
             _messages,
@@ -153,7 +158,8 @@ class SettingsViewModel(
     ) { base, syncTheme, userEtc, widgetPrefs ->
         @Suppress("UNCHECKED_CAST")
         val labels = base[0] as List<Label>
-        val customLists = base[1] as List<CustomList>
+        val customListBundle = base[1] as Pair<List<CustomList>, CustomListSyncStatus>
+        val customLists = customListBundle.first
         val projects = base[2] as List<Project>
         val notifPrefs = base[3] as NotificationPrefs
         val messages = base[4] as Pair<String?, String?>
@@ -181,6 +187,7 @@ class SettingsViewModel(
             nlpConfig = nlpConfig,
             labels = labels.sortedBy { it.title.lowercase() },
             customLists = customLists,
+            customListSyncStatus = customListBundle.second,
             projects = projects.filter { !it.isArchived },
             archivedProjects = projects.filter { it.isArchived },
             notificationPrefs = notifPrefs,
@@ -281,7 +288,7 @@ class SettingsViewModel(
     fun logout() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             database.clearAllTables()
-            customListStore.clear()
+            customListRepository.clearLocal()
             bottomBarPrefsStore.clear()
             authManager.logout() // calls POST /user/logout internally
             platformSettingsHooks.updateWidgets()
@@ -437,16 +444,20 @@ class SettingsViewModel(
 
     fun saveCustomList(customList: CustomList) {
         viewModelScope.launch {
-            customListStore.save(customList)
+            customListRepository.upsert(customList)
             _messages.update { null to "List saved" }
         }
     }
 
     fun deleteCustomList(id: String) {
         viewModelScope.launch {
-            customListStore.delete(id)
+            customListRepository.delete(id)
             _messages.update { null to "List deleted" }
         }
+    }
+
+    fun retryCustomListSync() {
+        viewModelScope.launch { customListRepository.sync() }
     }
 
     // --- Notifications ---
