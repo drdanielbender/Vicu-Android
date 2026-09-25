@@ -9,8 +9,7 @@ import androidx.glance.appwidget.state.updateAppWidgetState
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.domain.repository.TaskRepository
-import com.rendyhd.vicu.notification.AlarmScheduler
-import com.rendyhd.vicu.worker.SyncScheduler
+import com.rendyhd.vicu.util.NetworkResult
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 
@@ -32,14 +31,12 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
         val taskDao = get<TaskDao>()
         val taskMapper = get<TaskMapper>()
         val taskRepository = get<TaskRepository>()
-        val alarmScheduler = get<AlarmScheduler>()
 
         try {
             val entity = taskDao.getByIdSync(taskId) ?: return
             val task = with(taskMapper) { entity.toDomain() }
-            taskRepository.toggleDone(task)
 
-            // Immediately update this widget's Glance state (remove the task)
+            // Show completion without waiting for the server or descendant updates.
             updateAppWidgetState(
                 context,
                 TaskWidgetStateDefinition,
@@ -48,7 +45,7 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
                 val state = TaskWidgetStateDefinition.parseState(prefs)
                 val updatedState = state.copy(
                     tasks = state.tasks.filter { it.id != taskId },
-                    totalCount = (state.totalCount - 1).coerceAtLeast(0),
+                    totalCount = (state.totalCount - if (state.tasks.any { it.id == taskId }) 1 else 0).coerceAtLeast(0),
                 )
                 prefs.toMutablePreferences().apply {
                     this[TaskWidgetStateDefinition.KEY_STATE] =
@@ -56,16 +53,14 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
                 }
             }
             TaskListWidget().update(context, glanceId)
-
-            // Cancel reminders + schedule background sync. The repository owns
-            // the recursive completion and offline action queue.
-            alarmScheduler.cancelForTask(taskId)
-            SyncScheduler.enqueueImmediate(context)
+            if (taskRepository.toggleDone(task) is NetworkResult.Error) {
+                Log.w(TAG, "Task $taskId could not be toggled; refreshing widget state")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle task $taskId", e)
         }
 
-        // Refresh all widgets (covers other widget instances showing the same task)
+        // Reconcile failures and refresh other instances from Room.
         WidgetUpdateScheduler.enqueueImmediateUpdateAll(context)
     }
 }
