@@ -32,6 +32,7 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
         val taskMapper = get<TaskMapper>()
         val taskRepository = get<TaskRepository>()
 
+        var pending = false
         try {
             val entity = taskDao.getByIdSync(taskId) ?: return
             val task = with(taskMapper) { entity.toDomain() }
@@ -44,23 +45,33 @@ class ToggleTaskCallback : ActionCallback, KoinComponent {
             ) { prefs ->
                 val state = TaskWidgetStateDefinition.parseState(prefs)
                 val updatedState = state.copy(
-                    tasks = state.tasks.filter { it.id != taskId },
-                    totalCount = (state.totalCount - if (state.tasks.any { it.id == taskId }) 1 else 0).coerceAtLeast(0),
-                )
+                    pendingCompletionIds = state.pendingCompletionIds + taskId,
+                ).hidePendingCompletions()
                 prefs.toMutablePreferences().apply {
                     this[TaskWidgetStateDefinition.KEY_STATE] =
                         TaskWidgetStateDefinition.encodeState(updatedState)
                 }
             }
+            pending = true
             TaskListWidget().update(context, glanceId)
             if (taskRepository.toggleDone(task) is NetworkResult.Error) {
                 Log.w(TAG, "Task $taskId could not be toggled; refreshing widget state")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle task $taskId", e)
+        } finally {
+            if (pending) {
+                updateAppWidgetState(context, TaskWidgetStateDefinition, glanceId) { prefs ->
+                    val state = TaskWidgetStateDefinition.parseState(prefs)
+                    prefs.toMutablePreferences().apply {
+                        this[TaskWidgetStateDefinition.KEY_STATE] = TaskWidgetStateDefinition.encodeState(
+                            state.copy(pendingCompletionIds = state.pendingCompletionIds - taskId),
+                        )
+                    }
+                }
+            }
+            // Reconcile failures and refresh other instances from Room.
+            WidgetUpdateScheduler.enqueueImmediateUpdateAll(context)
         }
-
-        // Reconcile failures and refresh other instances from Room.
-        WidgetUpdateScheduler.enqueueImmediateUpdateAll(context)
     }
 }
